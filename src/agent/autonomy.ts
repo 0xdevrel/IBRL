@@ -57,10 +57,13 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
   }
 
   // Autonomous loop (non-trigger): drawdown hedge proposal if price drops sharply.
-  if (opts?.owner) {
+  const owners = opts?.owner
+    ? [opts.owner]
+    : Array.from(new Set(intents.map((r) => String(r.owner || '').trim()).filter(Boolean)));
+  for (const owner of owners) {
     await maybeProposeDrawdownHedge({
       connection,
-      owner: opts.owner,
+      owner,
       solPrice,
       now,
       jupiter,
