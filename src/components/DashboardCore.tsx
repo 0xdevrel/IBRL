@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WalletContextProvider } from '@/components/WalletContextProvider';
 import { WalletButton } from '@/components/WalletButton';
+import { MarkdownMessage } from '@/components/MarkdownMessage';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { LAMPORTS_PER_SOL, VersionedTransaction } from '@solana/web3.js';
 import Link from 'next/link';
@@ -741,7 +742,10 @@ function DashboardContent() {
                           </div>
                         ) : item.agentReply ? (
                           <div className="mt-2 text-xs ink-dim ml-4">
-                            <span className="tech-label ink-dim">[IBRL]:</span> {item.agentReply}
+                            <div className="tech-label ink-dim">[IBRL]:</div>
+                            <div className="mt-1">
+                              <MarkdownMessage text={String(item.agentReply)} />
+                            </div>
                           </div>
                         ) : item.plan?.length ? (
                           <div className="mt-2 text-xs ink-dim">
