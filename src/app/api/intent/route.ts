@@ -10,6 +10,18 @@ const connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mai
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDC_DECIMALS = 6;
+
+function amountToBaseUnits(amount: { value: number; unit: 'SOL' | 'USDC' }) {
+  if (amount.unit === 'SOL') return Math.floor(amount.value * 1_000_000_000 + 1e-8);
+  return Math.floor(amount.value * 10 ** USDC_DECIMALS + 1e-8);
+}
+
+function getMintsForSwap(from: 'SOL' | 'USDC', to: 'SOL' | 'USDC') {
+  const inputMint = from === 'SOL' ? SOL_MINT : USDC_MINT;
+  const outputMint = to === 'SOL' ? SOL_MINT : USDC_MINT;
+  return { inputMint, outputMint };
+}
 
 function logInteraction(args: { owner?: string; prompt: string; execute: boolean; ok: boolean; payload: unknown }) {
   try {
@@ -97,11 +109,11 @@ export async function POST(req: Request) {
         ? [
             {
               type: 'SWAP',
-              description: `Swap ${intent.amount.value} SOL → USDC (slippage ${intent.slippageBps} bps)`,
+              description: `Swap ${intent.amount.value} ${intent.amount.unit} → ${intent.to} (slippage ${intent.slippageBps} bps)`,
               params: intent,
             },
           ]
-        : intent.kind === 'PRICE_TRIGGER_EXIT'
+      : intent.kind === 'PRICE_TRIGGER_EXIT'
           ? [
               {
                 type: 'ARM_TRIGGER',
@@ -109,6 +121,22 @@ export async function POST(req: Request) {
                 params: intent,
               },
             ]
+          : intent.kind === 'PRICE_TRIGGER_ENTRY'
+            ? [
+                {
+                  type: 'ARM_TRIGGER',
+                  description: `Arm: buy SOL with ${intent.amount.value} USDC when SOL/USD ≤ $${intent.thresholdUsd} (slippage ${intent.slippageBps} bps)`,
+                  params: intent,
+                },
+              ]
+            : intent.kind === 'DCA_SWAP'
+              ? [
+                  {
+                    type: 'ARM_SCHEDULE',
+                    description: `Arm: swap ${intent.amount.value} ${intent.amount.unit} ${intent.from} → ${intent.to} every ${intent.intervalMinutes} minutes (slippage ${intent.slippageBps} bps)`,
+                    params: intent,
+                  },
+                ]
           : [
               {
                 type: 'EXIT',
@@ -126,12 +154,24 @@ export async function POST(req: Request) {
     // Parsing should be fast; only fetch quotes when simulating/executing (or if explicitly requested).
     const shouldFetchQuote = Boolean(execute || includeQuote);
     const jupiter = shouldFetchQuote ? new JupiterManager(connection) : null;
-    const inputMint = SOL_MINT;
-    const outputMint = USDC_MINT;
-    const amountLamports = Math.floor(intent.amount.value * 1_000_000_000);
+    const swapFrom =
+      intent.kind === 'SWAP' || intent.kind === 'DCA_SWAP'
+        ? intent.from
+        : intent.kind === 'PRICE_TRIGGER_ENTRY'
+          ? 'USDC'
+          : 'SOL';
+    const swapTo =
+      intent.kind === 'SWAP' || intent.kind === 'DCA_SWAP'
+        ? intent.to
+        : intent.kind === 'PRICE_TRIGGER_ENTRY'
+          ? 'SOL'
+          : 'USDC';
+
+    const { inputMint, outputMint } = getMintsForSwap(swapFrom, swapTo);
+    const amountBaseUnits = amountToBaseUnits(intent.amount as any);
 
     const quote = shouldFetchQuote
-      ? await jupiter!.getQuote(inputMint, outputMint, amountLamports, intent.slippageBps)
+      ? await jupiter!.getQuote(inputMint, outputMint, amountBaseUnits, intent.slippageBps)
       : null;
     if (shouldFetchQuote && !quote) {
       const payload = { error: 'Failed to fetch swap quote' };
@@ -164,8 +204,10 @@ export async function POST(req: Request) {
       const proposalId = crypto.randomUUID();
       const summary =
         intent.kind === 'SWAP'
-          ? `Swap ${intent.amount.value} SOL → USDC`
-          : `Exit ${intent.amount.value} SOL → USDC`;
+          ? `Swap ${intent.amount.value} ${intent.from} → ${intent.to}`
+          : intent.kind === 'PRICE_TRIGGER_ENTRY'
+            ? `Buy SOL with ${intent.amount.value} USDC`
+            : `Exit ${intent.amount.value} SOL → USDC`;
 
       const db = getDb();
       const now = Date.now();
@@ -217,8 +259,8 @@ export async function POST(req: Request) {
       tx,
       agentReply: execute
         ? 'Simulation built. Approve in-wallet to send.'
-        : intent.kind === 'PRICE_TRIGGER_EXIT'
-          ? 'Parsed automation. Click “Save Automation” to arm it, or Simulate to validate the exit transaction.'
+        : intent.kind === 'PRICE_TRIGGER_EXIT' || intent.kind === 'PRICE_TRIGGER_ENTRY' || intent.kind === 'DCA_SWAP'
+          ? 'Parsed automation. Click “Save Automation” to arm it, or Simulate to validate the transaction.'
           : 'Parsed intent. Click Simulate to build and verify the transaction.',
       timestamp: Date.now(),
       agentFingerprint: 'IBRL-α-01'

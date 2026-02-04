@@ -22,8 +22,10 @@ You are IBRL-agent's intent extraction engine.
 Goal: Convert a human prompt into a single JSON object matching one of these intents:
 - CHAT: if the user greets or asks smalltalk (e.g., "hi", "hello"). Provide a short friendly reply in "message".
 - PRICE_TRIGGER_EXIT: a protective automation. When SOL/USD is <= thresholdUsd, propose an exit of a specific SOL amount to USDC. This is a proposal only; execution always requires wallet approval.
-- SWAP: swap between SOL and USDC. ONLY support unit SOL for now.
-- EXIT_TO_USDC: swap SOL -> USDC for a specified SOL amount. ONLY support unit SOL for now.
+- PRICE_TRIGGER_ENTRY: a protective/entry automation. When SOL/USD is <= thresholdUsd, propose a buy of SOL using a specified USDC amount. This is a proposal only; execution always requires wallet approval.
+- DCA_SWAP: a schedule automation. Every intervalMinutes, propose a swap of amount from one asset to the other. This is a proposal only; execution always requires wallet approval.
+- SWAP: swap between SOL and USDC. Unit must match the "from" asset (SOL or USDC).
+- EXIT_TO_USDC: swap SOL -> USDC for a specified SOL amount.
 - UNSUPPORTED: if the user asks for anything else (yield strategies, leverage, Kamino operations, unknown tokens, price targets, etc).
 
 Rules:
@@ -155,6 +157,34 @@ function normalizeGeminiIntent(raw: any): any {
     };
   }
 
+  if (raw.kind === 'PRICE_TRIGGER_ENTRY') {
+    return {
+      kind: 'PRICE_TRIGGER_ENTRY',
+      amount: {
+        value: typeof raw.amount?.value === 'string' ? Number(raw.amount.value) : raw.amount?.value,
+        unit: 'USDC',
+      },
+      thresholdUsd:
+        typeof raw.thresholdUsd === 'string' ? Number(raw.thresholdUsd) : raw.thresholdUsd,
+      slippageBps: raw.slippageBps ?? 50,
+    };
+  }
+
+  if (raw.kind === 'DCA_SWAP') {
+    return {
+      kind: 'DCA_SWAP',
+      from: normalizeAsset(raw.from),
+      to: normalizeAsset(raw.to),
+      amount: {
+        value: typeof raw.amount?.value === 'string' ? Number(raw.amount.value) : raw.amount?.value,
+        unit: normalizeAsset(raw.amount?.unit || raw.from),
+      },
+      intervalMinutes:
+        typeof raw.intervalMinutes === 'string' ? Number(raw.intervalMinutes) : raw.intervalMinutes,
+      slippageBps: raw.slippageBps ?? 50,
+    };
+  }
+
   if (raw.kind === 'SWAP') {
     return {
       kind: 'SWAP',
@@ -162,7 +192,7 @@ function normalizeGeminiIntent(raw: any): any {
       to: normalizeAsset(raw.to),
       amount: {
         value: typeof raw.amount?.value === 'string' ? Number(raw.amount.value) : raw.amount?.value,
-        unit: 'SOL',
+        unit: normalizeAsset(raw.amount?.unit || raw.from),
       },
       slippageBps: raw.slippageBps ?? 50,
     };

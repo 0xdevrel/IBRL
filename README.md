@@ -11,7 +11,11 @@ Built for the Solana AI Agent Hackathon | Team: IBRL-agent's Team
 IBRL turns natural language into strict, policy-gated actions:
 
 - *"Swap 0.1 SOL to USDC"*
+- *"Swap 10 USDC to SOL"*
 - *"Exit 0.25 SOL to USDC"*
+- *"Protect 0.25 SOL if SOL drops below 95"* (automation)
+- *"Buy SOL with 25 USDC if SOL drops below 90"* (automation)
+- *"DCA 5 USDC to SOL every 1h"* (automation)
 - *"Swap 0.1 SOL to USD"* (normalized to USDC)
 
 All execution is **simulate-first** and **user-signed**. If the wallet prompt is rejected, the pending transaction is cancelled.
@@ -24,7 +28,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **SOL/USD monitoring:** server-side SOL price via Pyth Hermes (`GET /api/price`), cached.
 - **Intent parsing + policy gate:** local parser for common intents + optional Gemini structured extraction (server-side only).
 - **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
-- **SQLite-backed autonomy:** save a price-trigger automation; the background agent proposes transactions when the trigger fires (still requires wallet approval to broadcast).
+- **SQLite-backed autonomy:** save automations (price triggers + DCA); the background agent proposes transactions when triggers fire (still requires wallet approval to broadcast).
 
 ## 🧱 Architecture (high-level)
 
@@ -110,7 +114,7 @@ curl -X POST http://localhost:3000/api/intent \
 Response (shape simplified):
 ```json
 {
-  "intent": { "kind": "SWAP", "amountSol": 0.1, "toToken": "USDC" },
+  "intent": { "kind": "SWAP", "from": "SOL", "to": "USDC", "amount": { "value": 0.1, "unit": "SOL" }, "slippageBps": 50 },
   "plan": [ "Quote via Jupiter", "Build + simulate transaction (optional)" ],
   "quote": { "...": "..." },
   "tx": { "swapTransactionBase64": "...", "simulation": { "...": "..." } },

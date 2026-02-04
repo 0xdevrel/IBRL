@@ -47,8 +47,11 @@ export async function POST(req: Request) {
   if (!prompt) return NextResponse.json({ error: 'prompt required' }, { status: 400 });
 
   const intent = await extractIntentWithGemini(prompt);
-  if (intent.kind !== 'PRICE_TRIGGER_EXIT') {
-    return NextResponse.json({ error: 'Only PRICE_TRIGGER_EXIT automations can be saved right now', intent }, { status: 400 });
+  if (!['PRICE_TRIGGER_EXIT', 'PRICE_TRIGGER_ENTRY', 'DCA_SWAP'].includes(intent.kind)) {
+    return NextResponse.json(
+      { error: 'Only automations can be saved (PRICE_TRIGGER_EXIT, PRICE_TRIGGER_ENTRY, DCA_SWAP)', intent },
+      { status: 400 }
+    );
   }
 
   const policy = await enforcePolicy(connection, owner, intent);
@@ -66,4 +69,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, id, owner, intent });
 }
-

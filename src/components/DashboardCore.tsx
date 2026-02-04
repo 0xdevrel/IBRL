@@ -353,11 +353,11 @@ function DashboardContent() {
       clearInterval(approvalsInterval);
       clearInterval(automationsInterval);
     };
-  }, [connected, publicKey]);
+  }, [connected, publicKey, historyHydrated]);
 
   const saveAutomation = async () => {
     if (!publicKey || !connected || !lastParsed) return;
-    if (lastParsed.intent?.kind !== 'PRICE_TRIGGER_EXIT') return;
+    if (!['PRICE_TRIGGER_EXIT', 'PRICE_TRIGGER_ENTRY', 'DCA_SWAP'].includes(lastParsed.intent?.kind)) return;
 
     setAutomationSaveStatus(null);
     try {
@@ -581,8 +581,9 @@ function DashboardContent() {
                   <div className="mt-3 space-y-2">
                     {savedAutomations.length === 0 ? (
                       <div className="text-[12px] ink-dim">
-                        Save a trigger like{' '}
-                        <span className="font-mono">Protect 0.25 SOL if SOL drops below 95</span>.
+                        Save an automation like{' '}
+                        <span className="font-mono">Protect 0.25 SOL if SOL drops below 95</span> or{' '}
+                        <span className="font-mono">DCA 5 USDC to SOL every 1h</span>.
                       </div>
                     ) : (
                       savedAutomations.slice(0, 2).map((a) => (
@@ -592,7 +593,13 @@ function DashboardContent() {
                         >
                           <div className="tech-label ink-dim">Active</div>
                           <div className="mt-1 text-[12px] ink-strong">
-                            Exit {a.config?.amount?.value} SOL if SOL/USD ≤ ${a.config?.thresholdUsd}
+                            {a.kind === 'PRICE_TRIGGER_EXIT' || a.config?.kind === 'PRICE_TRIGGER_EXIT'
+                              ? `Exit ${a.config?.amount?.value} SOL if SOL/USD ≤ $${a.config?.thresholdUsd}`
+                              : a.kind === 'PRICE_TRIGGER_ENTRY' || a.config?.kind === 'PRICE_TRIGGER_ENTRY'
+                                ? `Buy SOL with ${a.config?.amount?.value} USDC if SOL/USD ≤ $${a.config?.thresholdUsd}`
+                                : a.kind === 'DCA_SWAP' || a.config?.kind === 'DCA_SWAP'
+                                  ? `Every ${a.config?.intervalMinutes}m: swap ${a.config?.amount?.value} ${a.config?.from} → ${a.config?.to}`
+                                  : 'Automation'}
                           </div>
                         </div>
                       ))
@@ -717,7 +724,7 @@ function DashboardContent() {
                       onKeyDown={handleKeyPress}
                       placeholder={
                         connected
-                          ? "Enter intent (e.g. 'Swap 0.1 SOL to USDC' or 'Protect 0.25 SOL if SOL drops below 95')"
+                          ? "Enter intent (e.g. 'Swap 0.1 SOL to USDC', 'Swap 10 USDC to SOL', 'Protect 0.25 SOL if SOL drops below 95', or 'DCA 5 USDC to SOL every 1h')"
                           : 'Connect wallet to enter intent...'
                       }
                       className="flex-1 bg-transparent font-mono text-sm uppercase tracking-[0.06em] text-[rgba(58,58,56,0.95)] outline-none placeholder:text-[rgba(58,58,56,0.45)]"
@@ -739,7 +746,7 @@ function DashboardContent() {
                     >
                       Simulate
                     </button>
-                    {lastParsed?.intent?.kind === 'PRICE_TRIGGER_EXIT' && (
+                    {['PRICE_TRIGGER_EXIT', 'PRICE_TRIGGER_ENTRY', 'DCA_SWAP'].includes(lastParsed?.intent?.kind) && (
                       <button
                         type="button"
                         className="h-10 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white px-4 tech-button ink-dim hover:text-[var(--color-forest)] disabled:opacity-50"
@@ -889,8 +896,9 @@ function DashboardContent() {
                 <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
                   <div className="tech-label ink-dim">What intents work?</div>
                   <div className="mt-2 text-[12px] leading-6 ink-dim">
-                    Currently: <span className="font-mono">Swap X SOL to USDC</span>, <span className="font-mono">Exit X SOL to USDC</span>, and{' '}
-                    <span className="font-mono">Protect X SOL if SOL drops below Y</span> (automation).
+                    Currently: <span className="font-mono">Swap X SOL to USDC</span>, <span className="font-mono">Swap X USDC to SOL</span>,{' '}
+                    <span className="font-mono">Exit X SOL to USDC</span>, <span className="font-mono">Protect X SOL if SOL drops below Y</span>{' '}
+                    (automation), and <span className="font-mono">DCA X USDC to SOL every Nh</span> (automation).
                     More will be added behind strict policies.
                   </div>
                 </div>

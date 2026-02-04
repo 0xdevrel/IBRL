@@ -47,6 +47,9 @@ export default function DocsPage() {
                     (simulate-first, then wallet approval to broadcast).
                   </div>
                   <div>
+                    <span className="font-mono">USDC → SOL swaps</span> are supported (requires a USDC token balance).
+                  </div>
+                  <div>
                     <span className="font-mono">Secure RPC proxy</span> + upstream failover to avoid browser 403s and keep
                     vendor keys server-side.
                   </div>
@@ -165,7 +168,19 @@ export default function DocsPage() {
                     <span className="font-mono">Swap X SOL to USDC</span>
                   </div>
                   <div>
+                    <span className="font-mono">Swap X USDC to SOL</span>
+                  </div>
+                  <div>
                     <span className="font-mono">Exit X SOL to USDC</span>
+                  </div>
+                  <div>
+                    <span className="font-mono">Protect X SOL if SOL drops below Y</span> (save automation)
+                  </div>
+                  <div>
+                    <span className="font-mono">Buy SOL with X USDC if SOL drops below Y</span> (save automation)
+                  </div>
+                  <div>
+                    <span className="font-mono">DCA X USDC to SOL every Nh</span> (save automation)
                   </div>
                   <div className="text-[rgba(58,58,56,0.65)]">
                     More intents are intentionally gated behind strict policies.
@@ -176,7 +191,7 @@ export default function DocsPage() {
                 <div className="tech-label ink-dim">04. Known Limits</div>
                 <div className="mt-2 space-y-2 text-[12px] leading-6 ink-dim">
                   <div>
-                    Only <span className="font-mono">SOL → USDC</span> swaps are enabled right now.
+                    Only <span className="font-mono">SOL</span> and <span className="font-mono">USDC</span> are supported in v1.
                   </div>
                   <div>
                     Execution always requires a wallet signature; the agent will not auto-broadcast.
