@@ -57,6 +57,7 @@ function InboxContent() {
   const [selected, setSelected] = useState<Proposal | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
 
   const selectedSimOk = Boolean(selected?.simulation) && selected?.simulation?.value?.err == null;
 
@@ -123,6 +124,34 @@ function InboxContent() {
     }).catch(() => {});
     setProposals((prev) => prev.map((p) => (p.id === selectedId ? { ...p, status: 'DENIED' } : p)));
     setSelected((prev) => (prev && prev.id === selectedId ? { ...prev, status: 'DENIED' } : prev));
+  };
+
+  const generateSampleProposal = async () => {
+    if (!owner || !connected) return;
+    setActionError(null);
+    setSampleLoading(true);
+    try {
+      const res = await fetch('/api/intent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          owner,
+          execute: true,
+          prompt: 'Swap 0.01 SOL to USDC',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(String(data?.reason || data?.error || 'Failed to generate sample proposal.'));
+        return;
+      }
+      const proposalId = data?.tx?.proposalId ? String(data.tx.proposalId) : null;
+      if (proposalId) setSelectedId(proposalId);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSampleLoading(false);
+    }
   };
 
   const isUserRejected = (e: unknown) => {
@@ -277,6 +306,21 @@ function InboxContent() {
                   {filtered.length === 0 && (
                     <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
                       <div className="tech-meta ink-dim">No proposals for this filter.</div>
+                      {statusFilter === 'PENDING_APPROVAL' && proposals.length === 0 && (
+                        <div className="mt-4">
+                          <button
+                            type="button"
+                            className="h-11 w-full rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-forest)] px-6 tech-button text-[var(--color-paper)] hover:opacity-90 transition-opacity duration-150 ease-out disabled:opacity-50"
+                            onClick={generateSampleProposal}
+                            disabled={sampleLoading}
+                          >
+                            {sampleLoading ? 'Generating…' : 'Generate Sample Proposal'}
+                          </button>
+                          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] ink-muted">
+                            Builds a real Jupiter swap transaction and simulates it (no broadcast).
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
