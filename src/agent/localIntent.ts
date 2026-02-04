@@ -91,6 +91,8 @@ export function parseIntentLocally(prompt: string): Intent {
   // "enter 25 usdc to sol when sol < 90"
   const entryRegex1 =
     /^(?:buy|enter)\s+(\d+(?:\.\d+)?)\s*(usdc|usd)\s*(?:to|->)\s*(sol)\s+.*?(?:if|when).*(?:sol).*(?:below|under|<)\s*\$?(\d+(?:\.\d+)?)/i;
+  const entryRegexWith =
+    /^(?:buy)\s+(sol)\s+with\s+(\d+(?:\.\d+)?)\s*(usdc|usd)\s+.*?(?:if|when).*(?:sol).*(?:below|under|<)\s*\$?(\d+(?:\.\d+)?)/i;
   const entryRegex2 =
     /^(?:if|when)\s+sol\s+.*?(?:below|under|<)\s*\$?(\d+(?:\.\d+)?)\s*,?\s*(?:then\s*)?(?:buy|enter)\s+(\d+(?:\.\d+)?)\s*(usdc|usd)\s*(?:to|->)\s*(sol)\b/i;
 
@@ -98,6 +100,17 @@ export function parseIntentLocally(prompt: string): Intent {
   if (e1) {
     const amount = Number(e1[1]);
     const thresholdUsd = Number(e1[4]);
+    return {
+      kind: 'PRICE_TRIGGER_ENTRY',
+      amount: { value: amount, unit: 'USDC' },
+      thresholdUsd,
+      slippageBps: 50,
+    };
+  }
+  const ew = text.match(entryRegexWith);
+  if (ew) {
+    const amount = Number(ew[2]);
+    const thresholdUsd = Number(ew[4]);
     return {
       kind: 'PRICE_TRIGGER_ENTRY',
       amount: { value: amount, unit: 'USDC' },

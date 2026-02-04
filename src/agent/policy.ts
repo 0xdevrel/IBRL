@@ -79,16 +79,30 @@ export async function enforcePolicy(connection: Connection, owner: string | unde
     const lamports = await connection.getBalance(ownerKey);
     const solBalance = lamports / LAMPORTS_PER_SOL;
     const requestedSol = intent.amount.value;
-    if (requestedSol > solBalance * 0.95) {
-      return { ok: false, reason: `Requested ${requestedSol} SOL exceeds safe spend (95% of balance)` };
+    const safeSol = solBalance * 0.95;
+    if (requestedSol > safeSol) {
+      return {
+        ok: false,
+        reason: `Insufficient SOL balance. Have ${solBalance.toFixed(4)} SOL (max spend ${safeSol.toFixed(
+          4
+        )} SOL); requested ${requestedSol} SOL.`,
+      };
     }
   }
 
   if (intent.amount.unit === 'USDC') {
     const { amount: usdcBase, decimals } = await getUsdcBalanceBaseUnits(connection, ownerKey);
     const requested = toBaseUnits(intent.amount.value, decimals);
-    if (requested > (usdcBase * BigInt(95)) / BigInt(100)) {
-      return { ok: false, reason: `Requested ${intent.amount.value} USDC exceeds safe spend (95% of balance)` };
+    const safe = (usdcBase * BigInt(95)) / BigInt(100);
+    if (requested > safe) {
+      const availableHuman = Number(usdcBase) / 10 ** decimals;
+      const safeHuman = Number(safe) / 10 ** decimals;
+      return {
+        ok: false,
+        reason: `Insufficient USDC balance. Have ${availableHuman.toFixed(2)} USDC (max spend ${safeHuman.toFixed(
+          2
+        )} USDC); requested ${intent.amount.value} USDC.`,
+      };
     }
   }
 
