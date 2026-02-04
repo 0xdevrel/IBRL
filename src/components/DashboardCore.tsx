@@ -500,9 +500,13 @@ function DashboardContent() {
         <div className="hairline-b">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-10">
             <div className="flex items-center gap-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-[2px] bg-[var(--color-forest)]">
+              <Link
+                href="/"
+                aria-label="Go to dashboard"
+                className="flex h-8 w-8 items-center justify-center rounded-[2px] bg-[var(--color-forest)] focus:outline-none focus:ring-2 focus:ring-[var(--color-forest)] focus:ring-offset-2 focus:ring-offset-[var(--color-paper)]"
+              >
                 <span className="text-[var(--color-paper)] font-bold">I</span>
-              </div>
+              </Link>
               <div>
                 <div className="tech-label ink-dim">IBRL Sovereign Vault</div>
                 <div className="tech-meta ink-dim">REF_ID: 466 • VER: 1.0.4</div>
