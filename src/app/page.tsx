@@ -1,65 +1,36 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { WalletButton } from '@/components/WalletButton';
+import { WalletContextProvider } from '@/components/WalletContextProvider';
 
-const StatusBadge = ({ label, active }: { label: string, active: boolean }) => (
-  <div className={`inline-flex items-center gap-2 px-3 py-1 border border-black ${active ? 'bg-[#9EFFBF]' : 'bg-white'}`}>
-    <div className={`w-2 h-2 ${active ? 'bg-black' : 'bg-black/20'} rounded-none`} />
-    <span className="font-mono text-[10px] uppercase tracking-widest font-bold text-black">{label}</span>
-  </div>
-);
-
-const CornerMarkers = () => (
-  <>
-    <div className="absolute -top-px -left-px w-3 h-3 border-t-2 border-l-2 border-black" />
-    <div className="absolute -top-px -right-px w-3 h-3 border-t-2 border-r-2 border-black" />
-    <div className="absolute -bottom-px -left-px w-3 h-3 border-b-2 border-l-2 border-black" />
-    <div className="absolute -bottom-px -right-px w-3 h-3 border-b-2 border-r-2 border-black" />
-  </>
-);
-
-export default function Dashboard() {
+function DashboardContent() {
   const { publicKey, connected, sendTransaction } = useWallet();
   const [data, setData] = useState<any>(null);
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
-
-  const handleProvision = async () => {
-    if (!publicKey || !data?.walletAddress) return;
-    setProvisioning(true);
-    try {
-      const { SystemProgram, Transaction, LAMPORTS_PER_SOL, PublicKey: SolanaPublicKey } = await import('@solana/web3.js');
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new SolanaPublicKey(data.walletAddress),
-          lamports: 0.05 * LAMPORTS_PER_SOL,
-        })
-      );
-      const signature = await sendTransaction(transaction, new (await import('@solana/web3.js')).Connection('https://api.mainnet-beta.solana.com'));
-      console.log('Provisioned:', signature);
-      alert(`Provisioned 0.05 SOL to Agent. Sig: ${signature.slice(0, 8)}...`);
-    } catch (e) {
-      console.error('Provisioning failed', e);
-    }
-    setProvisioning(false);
-  };
+  const [time, setTime] = useState<string>('');
 
   useEffect(() => {
+    setTime(new Date().toLocaleTimeString());
     const fetchStatus = async () => {
       try {
         const res = await fetch('/api/status');
+        if (!res.ok) throw new Error('Failed to fetch');
         const status = await res.json();
         setData(status);
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error('[Dashboard] Status Fetch Error:', e); 
+      }
     };
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
+    const interval = setInterval(() => {
+        fetchStatus();
+        setTime(new Date().toLocaleTimeString());
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -79,158 +50,154 @@ export default function Dashboard() {
     setLoading(false);
   };
 
+  const handleProvision = async () => {
+    if (!publicKey || !data?.walletAddress) return;
+    setProvisioning(true);
+    try {
+      const { SystemProgram, Transaction, LAMPORTS_PER_SOL, PublicKey: SolanaPublicKey, Connection } = await import('@solana/web3.js');
+      const connection = new Connection('https://api.mainnet-beta.solana.com');
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new SolanaPublicKey(data.walletAddress),
+          lamports: 0.05 * LAMPORTS_PER_SOL,
+        })
+      );
+      const signature = await sendTransaction(transaction, connection);
+      alert(`Provisioning sent! Sig: ${signature.slice(0, 8)}`);
+    } catch (e) {
+      console.error('Provisioning failed', e);
+      alert('Provisioning failed. Check console.');
+    }
+    setProvisioning(false);
+  };
+
   return (
-    <div className="min-h-screen bg-white text-black font-sans selection:bg-black selection:text-white">
-      {/* High Contrast Header */}
-      <nav className="fixed top-0 w-full h-20 bg-white border-b-2 border-black z-50 flex items-center justify-between px-8">
-        <div className="flex items-center gap-6">
+    <div className="min-h-screen bg-white text-black font-sans selection:bg-black selection:text-white pb-24">
+      <nav className="fixed top-0 w-full h-20 bg-white border-b-4 border-black z-50 flex items-center justify-between px-10">
+        <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-black flex items-center justify-center">
-            <div className="w-5 h-5 border-2 border-white rotate-45" />
+             <div className="w-5 h-5 border-2 border-white rotate-45" />
           </div>
-          <span className="font-mono text-sm font-black tracking-tighter uppercase italic">IBRL_CORE_SYSTEM</span>
+          <span className="text-2xl font-black tracking-tighter italic">IBRL_CORE</span>
         </div>
         <div className="flex items-center gap-6">
-          <StatusBadge label={data?.riskLevel || "OFFLINE"} active={true} />
-          <div className="wallet-adapter-custom">
-            <WalletMultiButton className="!bg-black !text-white !rounded-none !font-mono !text-[12px] !uppercase !tracking-[0.2em] !h-12 !px-8 !border-none !shadow-none hover:!opacity-80 transition-all" />
+          <div className="font-mono text-[10px] font-bold uppercase bg-[#9EFFBF] border-2 border-black px-4 py-1">
+            {data?.riskLevel || 'SYNCING'}
           </div>
+          <WalletButton />
         </div>
       </nav>
 
-      <main className="pt-32 px-8 max-w-[1400px] mx-auto pb-24">
-        {/* Title Section */}
+      <main className="pt-32 px-10 max-w-[1400px] mx-auto">
         <div className="mb-20">
-          <h1 className="text-[12vw] font-black leading-[0.8] tracking-tighter uppercase mb-8">
-            SOVEREIGN<br/>AGENT
-          </h1>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 border-t-2 border-black pt-8">
-            <p className="font-mono text-base font-bold uppercase leading-tight max-w-xl">
-              DECENTRALIZED RISK MITIGATION ENGINE. <br/>
-              AUTONOMOUS ASSET MANAGEMENT. <br/>
-              ZERO TRUST ARCHITECTURE.
-            </p>
-            <div className="flex flex-col gap-2 font-mono text-xs font-bold uppercase">
-              <div className="flex justify-between border-b border-black/10 pb-2">
-                <span>Network Status</span>
-                <span className="text-[#1A3C2B]">CONNECTED_MAINNET</span>
-              </div>
-              <div className="flex justify-between border-b border-black/10 pb-2">
-                <span>User Session</span>
-                <span>{connected ? `ACTIVE [${publicKey?.toBase58().slice(0,8)}]` : 'DISCONNECTED'}</span>
-              </div>
-            </div>
+          <h1 className="text-[14vw] font-black leading-[0.75] tracking-tighter uppercase mb-6">IBRL_VAULT</h1>
+          <div className="border-t-4 border-black pt-6 flex flex-col md:flex-row justify-between gap-10">
+             <p className="font-mono text-lg font-bold uppercase max-w-xl leading-tight text-black">
+               Autonomous risk mitigation. <br/>
+               Direct human-to-agent capital provisioning.
+             </p>
+             <div className="font-mono text-xs font-black uppercase space-y-2">
+                <div className="flex justify-between w-64">
+                   <span className="text-black/40">Status</span>
+                   <span className="text-emerald-600">ONLINE</span>
+                </div>
+                <div className="flex justify-between w-64">
+                   <span className="text-black/40">User</span>
+                   <span className="text-black">{connected ? publicKey?.toBase58().slice(0,12) + '...' : 'AWAITING_AUTH'}</span>
+                </div>
+             </div>
           </div>
         </div>
 
-        {/* Real-time Data Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-px bg-black border-2 border-black mb-16">
-          {[
-            ['SOL / USD', `$${data?.solPrice?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) || '0.00'}`],
-            ['Vault Balance', `${data?.balance?.toFixed(4) || '0.0000'} SOL`],
-            ['Solana Epoch', data?.currentEpoch || '---'],
-            ['Agent Uptime', data?.uptime || '0H 0M']
-          ].map(([label, val]) => (
-            <div key={label} className="bg-white p-10 group hover:bg-black transition-colors duration-300">
-              <span className="font-mono text-xs uppercase font-black text-black/40 group-hover:text-white/40 tracking-[0.2em]">{label}</span>
-              <h3 className="text-5xl font-black mt-4 group-hover:text-white transition-colors">{val}</h3>
-            </div>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-px bg-black border-4 border-black mb-16">
+           {[
+             ['SOL / USD', `$${data?.solPrice?.toFixed(2) || '0.00'}`],
+             ['Vault Balance', `${data?.balance?.toFixed(4) || '0.0000'} SOL`],
+             ['Solana Epoch', data?.currentEpoch || '---'],
+             ['Uptime', data?.uptime || '0H 0M']
+           ].map(([label, val]) => (
+             <div key={label} className="bg-white p-10">
+               <span className="font-mono text-[10px] uppercase font-black text-black/40 tracking-[0.2em]">{label}</span>
+               <h3 className="text-5xl font-black mt-2 text-black">{val}</h3>
+             </div>
+           ))}
         </div>
 
-        {/* Agent ID Bar */}
-        <div className="mb-16 bg-black text-white p-6 font-mono text-sm font-bold flex flex-col md:flex-row justify-between items-center gap-4">
-           <div className="flex items-center gap-4">
-              <span className="text-[#9EFFBF]">AGENT_PROXY_ADDR:</span>
-              <span className="break-all">{data?.walletAddress || 'INITIALIZING...'}</span>
+        <div className="bg-black text-white p-8 mb-16 flex flex-col md:flex-row justify-between items-center gap-6 border-4 border-black">
+           <div className="font-mono font-bold">
+              <span className="text-[#9EFFBF]">AGENT_PROXY:</span> {data?.walletAddress || 'INITIALIZING...'}
            </div>
            <button 
              onClick={handleProvision}
              disabled={!connected || provisioning}
-             className="bg-[#9EFFBF] text-black px-6 py-2 uppercase tracking-tighter hover:opacity-90 disabled:opacity-30 transition-all"
+             className="bg-[#9EFFBF] text-black px-10 py-4 font-black uppercase text-sm hover:opacity-90 disabled:opacity-20 transition-all"
            >
-             {provisioning ? 'SYNCING...' : 'PROVISION_CAPITAL_0.05_SOL'}
+             {provisioning ? 'PROCESSING...' : 'PROVISION_0.05_SOL'}
            </button>
         </div>
 
-        {/* Command Center */}
-        <div className="relative border-2 border-black p-12 bg-white mb-16">
-          <CornerMarkers />
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-3 h-3 bg-black animate-pulse" />
-            <h2 className="font-mono text-sm uppercase font-black tracking-[0.3em]">Command_Protocol_Alpha</h2>
-          </div>
-          
-          <form onSubmit={handleCommand} className="flex flex-col gap-6">
-            <div className="relative">
+        <div className="border-4 border-black p-10 bg-white mb-16 relative">
+           <div className="absolute top-0 right-0 w-4 h-4 bg-black" />
+           <div className="absolute bottom-0 left-0 w-4 h-4 bg-black" />
+           
+           <h2 className="font-mono text-xs font-black uppercase mb-10 tracking-[0.3em] flex items-center gap-2 text-black">
+             <div className="w-2 h-2 bg-black animate-pulse" />
+             Command_Protocol_Alpha
+           </h2>
+
+           <form onSubmit={handleCommand} className="flex flex-col gap-6">
               <input 
-                type="text" 
+                type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="INPUT STRATEGIC GOAL (E.G. CHASE 10% APY)"
-                className="w-full bg-[#F2F2F2] border-2 border-black p-8 font-mono text-xl font-bold text-black placeholder:text-black/20 focus:outline-none focus:bg-white focus:ring-4 focus:ring-[#9EFFBF]/30 transition-all uppercase"
+                placeholder="ENTER STRATEGIC INTENT"
+                className="w-full bg-[#F5F5F5] border-2 border-black p-8 font-mono text-2xl font-black text-black placeholder:text-black/40 focus:outline-none focus:bg-white"
               />
-            </div>
-            <button 
-              disabled={loading}
-              className="bg-black text-white p-8 font-mono text-lg font-black uppercase tracking-[0.4em] hover:bg-[#1A3C2B] disabled:opacity-50 transition-all"
-            >
-              {loading ? 'ANALYZING_INTENT...' : 'EXECUTE_STRATEGY'}
-            </button>
-          </form>
+              <button className="bg-black text-white p-8 font-mono text-xl font-black uppercase tracking-[0.4em] hover:bg-emerald-900 transition-all">
+                Execute_Strategy
+              </button>
+           </form>
 
-          {plan.length > 0 && (
-            <div className="mt-12 pt-12 border-t-2 border-black space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
-              <h3 className="font-mono text-xs font-black uppercase tracking-[0.2em] mb-8">Generated_Sequence:</h3>
-              <div className="grid grid-cols-1 gap-4">
+           {plan.length > 0 && (
+             <div className="mt-10 pt-10 border-t-2 border-black space-y-4">
                 {plan.map((step, i) => (
-                  <div key={i} className="flex items-stretch gap-6 group">
-                    <div className="w-16 bg-black text-white flex items-center justify-center font-mono text-xl font-bold">
-                      0{i+1}
-                    </div>
-                    <div className="flex-1 border-2 border-black p-6 hover:bg-[#9EFFBF]/10 transition-colors">
-                      <div className="font-mono text-xs font-black text-black uppercase mb-1">{step.type}</div>
-                      <div className="font-mono text-sm font-bold text-black/60 uppercase">{step.description}</div>
-                    </div>
+                  <div key={i} className="flex gap-6 border-2 border-black p-6 bg-[#F5F5F5]">
+                     <span className="font-black text-2xl text-black">0{i+1}</span>
+                     <div>
+                        <div className="font-black uppercase text-sm text-black">{step.type}</div>
+                        <div className="font-mono text-xs text-black/60">{step.description}</div>
+                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
+             </div>
+           )}
         </div>
 
-        {/* Telemetry Terminal */}
-        <div className="bg-black text-white p-10 font-mono text-sm">
-           <div className="flex justify-between items-center mb-10 border-b border-white/20 pb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-2 h-2 bg-[#9EFFBF]" />
-                <span className="font-black uppercase tracking-[0.3em]">Telemetry_Stream</span>
-              </div>
-              <div className="flex gap-8 text-[10px] font-bold opacity-40">
-                <span>SECURE_LINK: {connected ? 'ESTABLISHED' : 'PENDING'}</span>
-                <span>ENC: AES-256</span>
-              </div>
+        <div className="bg-black text-[#9EFFBF] p-10 font-mono text-xs">
+           <div className="flex justify-between border-b border-[#9EFFBF]/20 pb-4 mb-4">
+              <span className="font-black uppercase">Telemetry_Stream</span>
+              <span className="opacity-50">NODE_STATUS: OPTIMAL</span>
            </div>
-           
-           <div className="space-y-4 opacity-80">
-             <div className="flex gap-8">
-               <span className="text-[#9EFFBF] min-w-[80px]">[{new Date().toLocaleTimeString([], {hour12: false})}]</span>
-               <span className="uppercase tracking-tight font-bold">System_Check_Complete: All_Modules_Optimal</span>
-             </div>
-             <div className="flex gap-8">
-               <span className="text-[#9EFFBF] min-w-[80px]">[{new Date().toLocaleTimeString([], {hour12: false})}]</span>
-               <span className="uppercase tracking-tight font-bold">Network_Heartbeat: {connected ? `Human_Node_${publicKey?.toBase58().slice(0,12)}...` : 'Waiting_For_Human_Authority'}</span>
-             </div>
-             <div className="flex gap-8 animate-pulse text-[#9EFFBF]">
-               <span className="min-w-[80px]">[{new Date().toLocaleTimeString([], {hour12: false})}]</span>
-               <span className="uppercase tracking-widest font-black">Standing_By_For_Capital_Authorization_Signals</span>
-             </div>
+           <div className="space-y-2 opacity-80">
+              <div>[{time}] CORE_SYSTEM_NOMINAL</div>
+              <div>[{time}] PRICE_FEED_SYNCED: ${data?.solPrice}</div>
+              <div className="animate-pulse">[{time}] AWAITING_AUTHORIZATION...</div>
            </div>
         </div>
       </main>
-
-      <footer className="p-8 border-t-2 border-black font-mono text-[10px] font-black uppercase tracking-[0.5em] text-center">
-        IBRL_Sovereign_Vault_v1.0.1 // Solana_Mainnet // End_Of_Line
-      </footer>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return <div className="min-h-screen bg-white" />;
+  
+  return (
+    <WalletContextProvider>
+      <DashboardContent />
+    </WalletContextProvider>
   );
 }
