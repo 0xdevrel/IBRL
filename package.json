@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "start:agent": "npx ts-node src/agent/run.ts",
+    "build:agent": "tsc -p tsconfig.agent.json",
+    "start:agent": "npm run build:agent && node dist/agent/run.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

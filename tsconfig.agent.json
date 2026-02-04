@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist/agent",
+    "rootDir": "./src/agent",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "sourceMap": true,
+    "incremental": false
+  },
+  "include": ["src/agent/**/*.ts"],
+  "exclude": ["node_modules", ".next", "dist"]
+}

@@ -13,13 +13,13 @@ export function WalletButton() {
 
     if (!mounted) {
         return (
-            <div className="h-12 px-10 bg-black/10 animate-pulse border-2 border-black" />
+            <div className="h-11 min-w-[220px] rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white/50 animate-pulse" />
         );
     }
 
     return (
         <div className="wallet-adapter-custom">
-            <WalletMultiButton className="!bg-black !text-white !rounded-none !font-mono !text-[12px] !uppercase !h-12 !px-10 !border-none !shadow-none hover:!opacity-80 transition-all" />
+            <WalletMultiButton className="!h-11 !min-w-[220px] !justify-center" />
         </div>
     );
 }

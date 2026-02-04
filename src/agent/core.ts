@@ -2,6 +2,8 @@
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import * as dotenv from 'dotenv';
 import { AgentWallet } from './wallet';
+import { KaminoManager } from './kamino';
+import { RiskManager, RiskParameters } from './risk';
 
 dotenv.config();
 
@@ -14,6 +16,8 @@ export interface AgentStatus {
   solPrice: number | null;
   walletAddress: string;
   balance: number;
+  riskAlerts: any[];
+  portfolioMetrics?: any;
 }
 
 export class IBRLAgent {
@@ -22,12 +26,25 @@ export class IBRLAgent {
   private startTime: number;
   private status: AgentStatus;
   private wallet: AgentWallet;
+  private kamino: KaminoManager;
+  private riskManager: RiskManager;
 
   constructor() {
     this.connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
     this.apiKey = process.env.HACKATHON_API_KEY || '';
     this.startTime = Date.now();
     this.wallet = new AgentWallet(this.connection);
+    this.kamino = new KaminoManager(this.connection);
+    
+    // Initialize risk manager with default parameters
+    const riskParameters: RiskParameters = {
+      maxDrawdown: 0.15, // 15% max drawdown
+      stopLossThreshold: 85, // Stop loss at $85 SOL
+      maxPositionSize: 10, // Max 10 SOL position
+      minHealthFactor: 1.2 // Minimum 1.2 health factor
+    };
+    
+    this.riskManager = new RiskManager(this.connection, this.kamino, riskParameters);
     
     this.status = {
       startTime: this.startTime,
@@ -38,6 +55,7 @@ export class IBRLAgent {
       solPrice: null,
       walletAddress: this.wallet.publicKey.toBase58(),
       balance: 0,
+      riskAlerts: []
     };
   }
 
@@ -72,8 +90,30 @@ export class IBRLAgent {
          this.status.solPrice = 98.42; 
          console.warn('[IBRL] All price APIs failed, using last known fallback.');
       }
+
+      // Update risk assessment and portfolio metrics
+      if (this.status.solPrice) {
+        const riskAssessment = await this.riskManager.assessRisk(
+          this.wallet.publicKey.toBase58(),
+          this.status.solPrice
+        );
+        
+        this.status.riskAlerts = riskAssessment.alerts;
+        this.status.portfolioMetrics = riskAssessment.metrics;
+        this.status.activePositions = riskAssessment.metrics.positions;
+        
+        // Update risk level based on alerts
+        if (riskAssessment.shouldStopTrading) {
+          this.status.riskLevel = 'CRITICAL';
+        } else if (riskAssessment.alerts.some(alert => alert.severity === 'HIGH')) {
+          this.status.riskLevel = 'HIGH';
+        } else if (riskAssessment.alerts.some(alert => alert.severity === 'MEDIUM')) {
+          this.status.riskLevel = 'MEDIUM';
+        } else {
+          this.status.riskLevel = 'OPTIMAL';
+        }
+      }
       
-      this.status.riskLevel = this.status.solPrice ? 'OPTIMAL' : 'MONITORING';
     } catch (error) {
       console.error('[IBRL] Critical sync failure:', error);
       this.status.riskLevel = 'DEGRADED';
