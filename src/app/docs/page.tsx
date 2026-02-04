@@ -60,6 +60,10 @@ export default function DocsPage() {
                   <div>
                     <span className="font-mono">Monitoring</span>: SOL/USD (Pyth Hermes), epoch info, wallet balance.
                   </div>
+                  <div>
+                    <span className="font-mono">Operator UX</span>: an approvals inbox and intent templates reduce friction
+                    while keeping wallet approval as the execution boundary.
+                  </div>
                 </div>
               </div>
 

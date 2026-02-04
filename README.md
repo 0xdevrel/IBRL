@@ -29,6 +29,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **Intent parsing + policy gate:** local parser for common intents + optional Gemini structured extraction (server-side only).
 - **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
 - **SQLite-backed autonomy:** save automations (price triggers + DCA); the background agent proposes transactions when triggers fire (still requires wallet approval to broadcast).
+- **UX accelerators:** built-in intent templates and an approvals inbox inside the dashboard.
 
 ## 🧱 Architecture (high-level)
 

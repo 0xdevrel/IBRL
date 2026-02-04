@@ -55,6 +55,7 @@ function DashboardContent() {
   const [mosaicOffsetX, setMosaicOffsetX] = useState<number>(0);
   const terminalScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalBottomRef = useRef<HTMLDivElement | null>(null);
+  const intentInputRef = useRef<HTMLInputElement | null>(null);
 
   const [solPrice, setSolPrice] = useState<number | null>(null);
   const [epochInfo, setEpochInfo] = useState<any>(null);
@@ -172,6 +173,14 @@ function DashboardContent() {
       handleIntentSubmit(true);
     }
   };
+
+  const quickTemplates = [
+    { label: 'Swap 0.1 SOL → USDC', prompt: 'Swap 0.1 SOL to USDC' },
+    { label: 'Swap 10 USDC → SOL', prompt: 'Swap 10 USDC to SOL' },
+    { label: 'Protect (exit)', prompt: 'Protect 0.25 SOL if SOL drops below 95' },
+    { label: 'Buy dip (entry)', prompt: 'Buy SOL with 25 USDC if SOL drops below 90' },
+    { label: 'DCA hourly', prompt: 'DCA 5 USDC to SOL every 1h' },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -381,6 +390,41 @@ function DashboardContent() {
     }
   };
 
+  const refreshAutomations = async () => {
+    if (!publicKey) return;
+    try {
+      const res = await fetch(`/api/intents?owner=${encodeURIComponent(publicKey.toBase58())}`);
+      const data = await res.json();
+      if (res.ok) setSavedAutomations(Array.isArray(data?.intents) ? data.intents : []);
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleAutomation = async (id: string, next: 'PAUSE' | 'RESUME') => {
+    if (!publicKey) return;
+    try {
+      await fetch(`/api/intents/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ owner: publicKey.toBase58(), action: next }),
+      });
+    } finally {
+      refreshAutomations();
+    }
+  };
+
+  const deleteAutomation = async (id: string) => {
+    if (!publicKey) return;
+    try {
+      await fetch(`/api/intents/${encodeURIComponent(id)}?owner=${encodeURIComponent(publicKey.toBase58())}`, {
+        method: 'DELETE',
+      });
+    } finally {
+      refreshAutomations();
+    }
+  };
+
   const approveAndSend = async () => {
     if (!pendingTx?.swapTransactionBase64) return;
     const ok = pendingTx.simulation?.value?.err == null;
@@ -550,7 +594,7 @@ function DashboardContent() {
                     {pendingApprovals.length === 0 ? (
                       <div className="text-[12px] ink-dim">No pending proposals.</div>
                     ) : (
-                      pendingApprovals.slice(0, 2).map((p) => (
+                      pendingApprovals.slice(0, 4).map((p) => (
                         <button
                           key={p.id}
                           type="button"
@@ -565,10 +609,20 @@ function DashboardContent() {
                             })
                           }
                         >
-                          <div className="tech-label ink-dim">Pending</div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="tech-label ink-dim">Pending</div>
+                            <div className="tech-label ink-dim">
+                              {p.createdAt ? new Date(p.createdAt).toLocaleTimeString() : ''}
+                            </div>
+                          </div>
                           <div className="mt-1 text-[12px] ink-strong">{p.summary}</div>
                         </button>
                       ))
+                    )}
+                    {pendingApprovals.length > 4 && (
+                      <div className="text-[10px] uppercase tracking-[0.12em] ink-muted font-semibold">
+                        +{pendingApprovals.length - 4} more pending proposals
+                      </div>
                     )}
                   </div>
                 </div>
@@ -591,8 +645,26 @@ function DashboardContent() {
                           key={a.id}
                           className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-paper)] p-3"
                         >
-                          <div className="tech-label ink-dim">Active</div>
-                          <div className="mt-1 text-[12px] ink-strong">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="tech-label ink-dim">{a.status === 'PAUSED' ? 'Paused' : 'Active'}</div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="h-8 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white px-3 tech-button ink-dim hover:text-[var(--color-forest)]"
+                                onClick={() => toggleAutomation(a.id, a.status === 'PAUSED' ? 'RESUME' : 'PAUSE')}
+                              >
+                                {a.status === 'PAUSED' ? 'Resume' : 'Pause'}
+                              </button>
+                              <button
+                                type="button"
+                                className="h-8 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-3 tech-button text-[rgba(58,58,56,0.7)] hover:text-[var(--color-coral)]"
+                                onClick={() => deleteAutomation(a.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-2 text-[12px] ink-strong">
                             {a.kind === 'PRICE_TRIGGER_EXIT' || a.config?.kind === 'PRICE_TRIGGER_EXIT'
                               ? `Exit ${a.config?.amount?.value} SOL if SOL/USD ≤ $${a.config?.thresholdUsd}`
                               : a.kind === 'PRICE_TRIGGER_ENTRY' || a.config?.kind === 'PRICE_TRIGGER_ENTRY'
@@ -719,6 +791,7 @@ function DashboardContent() {
                     <input
                       id="intent"
                       type="text"
+                      ref={intentInputRef}
                       value={intentInput}
                       onChange={(e) => setIntentInput(e.target.value)}
                       onKeyDown={handleKeyPress}
@@ -757,6 +830,27 @@ function DashboardContent() {
                       </button>
                     )}
                   </div>
+
+                  {connected && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="tech-label ink-dim">Templates</span>
+                      {quickTemplates.map((t) => (
+                        <button
+                          key={t.label}
+                          type="button"
+                          className="h-8 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-paper)] px-3 tech-button ink-dim hover:text-[var(--color-forest)]"
+                          onClick={() => {
+                            setIntentInput(t.prompt);
+                            setAutomationSaveStatus(null);
+                            intentInputRef.current?.focus();
+                          }}
+                          disabled={isExecuting}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {automationSaveStatus && (
                     <div className="mt-3 text-[10px] uppercase tracking-[0.12em] ink-dim font-semibold">
