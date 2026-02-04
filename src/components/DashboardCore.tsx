@@ -306,6 +306,10 @@ function DashboardContent() {
       setPendingApprovals([]);
       setSavedAutomations([]);
       setHistoryHydrated(false);
+      setBalance(null);
+      setPendingTx(null);
+      setLastSignature(null);
+      setSendError(null);
       return;
     }
 
@@ -567,7 +571,7 @@ function DashboardContent() {
                 <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
                   <div className="tech-label ink-dim">Wallet Balance</div>
                   <div className="mt-2 font-mono text-2xl text-[var(--color-forest)]">
-                    {balance?.toFixed(4) || '0.0000'} SOL
+                    {connected && balance != null ? `${balance.toFixed(4)} SOL` : '—'}
                   </div>
                 </div>
               </div>
@@ -741,7 +745,7 @@ function DashboardContent() {
                         Hello IBRL.
                         <br />
                         <span className="text-[var(--color-forest)]">[IBRL]:</span> Sovereign identity confirmed. Ready
-                        to execute intents. Your current balance is {balance?.toFixed(4)} SOL.
+                        to execute intents. Your current balance is {balance != null ? `${balance.toFixed(4)} SOL` : '—'}.
                       </div>
                     ) : (
                       <div className="ink-dim italic">
