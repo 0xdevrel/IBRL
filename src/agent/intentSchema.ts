@@ -8,6 +8,15 @@ export const IntentSchema = z.discriminatedUnion('kind', [
     message: z.string().min(1),
   }),
   z.object({
+    kind: z.literal('PRICE_TRIGGER_EXIT'),
+    amount: z.object({
+      value: z.number().positive(),
+      unit: z.literal('SOL'),
+    }),
+    thresholdUsd: z.number().positive(),
+    slippageBps: z.number().int().min(1).max(200),
+  }),
+  z.object({
     kind: z.literal('SWAP'),
     from: SupportedAsset,
     to: SupportedAsset,

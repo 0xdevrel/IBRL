@@ -3,6 +3,7 @@ import { Connection, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import * as dotenv from 'dotenv';
 import { AgentWallet } from './wallet';
 import { getSolUsdPriceFromHermes } from '../lib/pyth';
+import { evaluateAutonomy } from './autonomy';
 
 dotenv.config();
 
@@ -25,12 +26,14 @@ export class IBRLAgent {
   private startTime: number;
   private status: AgentStatus;
   private wallet: AgentWallet;
+  private enableAutonomy: boolean;
 
-  constructor() {
+  constructor(opts?: { enableAutonomy?: boolean }) {
     this.connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
     this.apiKey = process.env.HACKATHON_API_KEY || '';
     this.startTime = Date.now();
     this.wallet = new AgentWallet(this.connection);
+    this.enableAutonomy = Boolean(opts?.enableAutonomy);
     
     this.status = {
       startTime: this.startTime,
@@ -90,6 +93,9 @@ export class IBRLAgent {
 
   async runCycle() {
     await this.updateNetworkStats();
+    if (this.enableAutonomy) {
+      await evaluateAutonomy(this.connection);
+    }
     console.log(`[IBRL] Cycle complete. SOL: ${this.status.solPrice} | Epoch: ${this.status.currentEpoch}`);
   }
 }

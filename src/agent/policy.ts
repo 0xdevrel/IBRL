@@ -15,6 +15,13 @@ export async function enforcePolicy(connection: Connection, owner: string | unde
     return { ok: false, reason: 'Slippage too high (max 100 bps)' };
   }
 
+  if (intent.kind === 'PRICE_TRIGGER_EXIT') {
+    if (intent.amount.unit !== 'SOL') return { ok: false, reason: 'Only SOL amounts are supported in v1' };
+    if (intent.thresholdUsd < 1 || intent.thresholdUsd > 10_000) {
+      return { ok: false, reason: 'Threshold out of bounds' };
+    }
+  }
+
   if (intent.kind === 'SWAP') {
     if (intent.from === intent.to) return { ok: false, reason: 'Swap assets must differ' };
     if (intent.amount.unit !== 'SOL') return { ok: false, reason: 'Only SOL amounts are supported in v1' };

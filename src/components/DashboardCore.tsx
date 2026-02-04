@@ -64,7 +64,12 @@ function DashboardContent() {
   const [intentHistory, setIntentHistory] = useState<any[]>([]);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [executionResults, setExecutionResults] = useState<any>(null);
+  const [lastParsed, setLastParsed] = useState<{ prompt: string; intent: any } | null>(null);
+  const [automationSaveStatus, setAutomationSaveStatus] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [savedAutomations, setSavedAutomations] = useState<any[]>([]);
   const [pendingTx, setPendingTx] = useState<null | {
+    proposalId?: string;
     swapTransactionBase64: string;
     simulation: any;
     quote: any;
@@ -76,13 +81,14 @@ function DashboardContent() {
   const handleIntentSubmit = async (execute: boolean = false) => {
     if (!intentInput.trim() || !connected) return;
 
+    const promptSnapshot = intentInput;
     setIsExecuting(true);
     
     try {
       const response = await fetch('/api/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: intentInput, execute, owner: publicKey?.toBase58() }),
+        body: JSON.stringify({ prompt: promptSnapshot, execute, owner: publicKey?.toBase58() }),
       });
 
       const data = await response.json();
@@ -91,7 +97,7 @@ function DashboardContent() {
         setIntentHistory((prev) => [
           {
             id: Date.now(),
-            prompt: intentInput,
+            prompt: promptSnapshot,
             plan: [],
             intent: data?.intent,
             tx: null,
@@ -108,7 +114,7 @@ function DashboardContent() {
       setIntentHistory((prev) => [
         {
           id: Date.now(),
-          prompt: intentInput,
+          prompt: promptSnapshot,
           plan: data.plan,
           intent: data.intent,
           tx: data.tx,
@@ -122,9 +128,11 @@ function DashboardContent() {
         ...prev.slice(0, 9),
       ]);
 
+      setLastParsed({ prompt: promptSnapshot, intent: data.intent });
+      setAutomationSaveStatus(null);
       setExecutionResults(data.tx?.simulation || null);
       if (data.tx?.swapTransactionBase64) {
-        setPendingTx({ ...data.tx, prompt: intentInput });
+        setPendingTx({ ...data.tx, prompt: promptSnapshot });
       }
       setIntentInput('');
     } catch (error) {
@@ -245,6 +253,77 @@ function DashboardContent() {
     return () => window.removeEventListener('resize', computeOffset);
   }, []);
 
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setPendingApprovals([]);
+      setSavedAutomations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const owner = publicKey.toBase58();
+
+    const loadApprovals = async () => {
+      try {
+        const res = await fetch(`/api/approvals?owner=${encodeURIComponent(owner)}`);
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          setPendingApprovals(Array.isArray(data?.proposals) ? data.proposals : []);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const loadAutomations = async () => {
+      try {
+        const res = await fetch(`/api/intents?owner=${encodeURIComponent(owner)}`);
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          setSavedAutomations(Array.isArray(data?.intents) ? data.intents : []);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    loadApprovals();
+    loadAutomations();
+    const approvalsInterval = setInterval(loadApprovals, 10_000);
+    const automationsInterval = setInterval(loadAutomations, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(approvalsInterval);
+      clearInterval(automationsInterval);
+    };
+  }, [connected, publicKey]);
+
+  const saveAutomation = async () => {
+    if (!publicKey || !connected || !lastParsed) return;
+    if (lastParsed.intent?.kind !== 'PRICE_TRIGGER_EXIT') return;
+
+    setAutomationSaveStatus(null);
+    try {
+      const res = await fetch('/api/intents', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ owner: publicKey.toBase58(), prompt: lastParsed.prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAutomationSaveStatus(String(data?.error || 'Failed to save automation.'));
+        return;
+      }
+      setAutomationSaveStatus('Automation saved. Background agent will propose when the trigger fires.');
+      // Refresh list
+      const list = await fetch(`/api/intents?owner=${encodeURIComponent(publicKey.toBase58())}`);
+      const listData = await list.json();
+      if (list.ok) setSavedAutomations(Array.isArray(listData?.intents) ? listData.intents : []);
+    } catch (e) {
+      setAutomationSaveStatus(e instanceof Error ? e.message : 'Failed to save automation.');
+    }
+  };
+
   const approveAndSend = async () => {
     if (!pendingTx?.swapTransactionBase64) return;
     const ok = pendingTx.simulation?.value?.err == null;
@@ -256,11 +335,25 @@ function DashboardContent() {
       const tx = VersionedTransaction.deserialize(Buffer.from(pendingTx.swapTransactionBase64, 'base64'));
       const signature = await sendTransaction(tx, connection, { skipPreflight: false });
       setLastSignature(signature);
+      if (pendingTx.proposalId) {
+        fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ decision: 'SENT', signature }),
+        }).catch(() => {});
+      }
       setPendingTx(null);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       // If the user rejects in-wallet, treat as a normal cancel (don’t keep an errored state).
       if (message.toLowerCase().includes('user rejected')) {
+        if (pendingTx?.proposalId) {
+          fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ decision: 'DENIED' }),
+          }).catch(() => {});
+        }
         setPendingTx(null);
         setSendError('Cancelled in wallet.');
         return;
@@ -328,7 +421,7 @@ function DashboardContent() {
                 <div className="mt-1 h-10 w-px bg-[rgba(58,58,56,0.2)]" />
                 <p className="tech-meta ink-dim max-w-xl">
                   Autonomous, intent-driven vault on Solana. Parse natural language into structured execution plans and
-                  route strategies through Jupiter + Kamino (prototype integrations).
+                  propose simulate-first transactions via Jupiter, plus optional price-trigger automations.
                 </p>
               </div>
 
@@ -388,6 +481,65 @@ function DashboardContent() {
                     <span className="font-mono">Enter</span>: Parse intent
                     <span className="mx-2 text-[rgba(58,58,56,0.4)]">•</span>
                     <span className="font-mono">Shift+Enter</span>: Build + simulate
+                  </div>
+                </div>
+
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="tech-label ink-dim">Approvals</div>
+                    <div className="tech-label ink-dim">{pendingApprovals.length}</div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {pendingApprovals.length === 0 ? (
+                      <div className="text-[12px] ink-dim">No pending proposals.</div>
+                    ) : (
+                      pendingApprovals.slice(0, 2).map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="w-full rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-paper)] px-3 py-2 text-left hover:opacity-90 transition-opacity duration-150 ease-out"
+                          onClick={() =>
+                            setPendingTx({
+                              proposalId: p.id,
+                              swapTransactionBase64: p.txBase64,
+                              simulation: p.simulation,
+                              quote: p.quote,
+                              prompt: p.summary,
+                            })
+                          }
+                        >
+                          <div className="tech-label ink-dim">Pending</div>
+                          <div className="mt-1 text-[12px] ink-strong">{p.summary}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="tech-label ink-dim">Automations</div>
+                    <div className="tech-label ink-dim">{savedAutomations.length}</div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {savedAutomations.length === 0 ? (
+                      <div className="text-[12px] ink-dim">
+                        Save a trigger like{' '}
+                        <span className="font-mono">Protect 0.25 SOL if SOL drops below 95</span>.
+                      </div>
+                    ) : (
+                      savedAutomations.slice(0, 2).map((a) => (
+                        <div
+                          key={a.id}
+                          className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-paper)] p-3"
+                        >
+                          <div className="tech-label ink-dim">Active</div>
+                          <div className="mt-1 text-[12px] ink-strong">
+                            Exit {a.config?.amount?.value} SOL if SOL/USD ≤ ${a.config?.thresholdUsd}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -505,7 +657,11 @@ function DashboardContent() {
                       value={intentInput}
                       onChange={(e) => setIntentInput(e.target.value)}
                       onKeyDown={handleKeyPress}
-                      placeholder={connected ? "Enter intent (e.g. 'Optimize yield on 0.5 SOL')" : 'Connect wallet to enter intent...'}
+                      placeholder={
+                        connected
+                          ? "Enter intent (e.g. 'Swap 0.1 SOL to USDC' or 'Protect 0.25 SOL if SOL drops below 95')"
+                          : 'Connect wallet to enter intent...'
+                      }
                       className="flex-1 bg-transparent font-mono text-sm uppercase tracking-[0.06em] text-[rgba(58,58,56,0.95)] outline-none placeholder:text-[rgba(58,58,56,0.45)]"
                       disabled={!connected || isExecuting}
                     />
@@ -525,7 +681,23 @@ function DashboardContent() {
                     >
                       Simulate
                     </button>
+                    {lastParsed?.intent?.kind === 'PRICE_TRIGGER_EXIT' && (
+                      <button
+                        type="button"
+                        className="h-10 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white px-4 tech-button ink-dim hover:text-[var(--color-forest)] disabled:opacity-50"
+                        onClick={saveAutomation}
+                        disabled={!connected || isExecuting}
+                      >
+                        Save Automation
+                      </button>
+                    )}
                   </div>
+
+                  {automationSaveStatus && (
+                    <div className="mt-3 text-[10px] uppercase tracking-[0.12em] ink-dim font-semibold">
+                      {automationSaveStatus}
+                    </div>
+                  )}
 
                   {pendingTx && (
                     <div className="mt-3 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-3">
@@ -553,7 +725,16 @@ function DashboardContent() {
                             <button
                               type="button"
                               className="h-9 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-4 tech-button ink-dim hover:text-[var(--color-forest)]"
-                              onClick={() => setPendingTx(null)}
+                              onClick={() => {
+                                if (pendingTx?.proposalId) {
+                                  fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
+                                    method: 'POST',
+                                    headers: { 'content-type': 'application/json' },
+                                    body: JSON.stringify({ decision: 'DENIED' }),
+                                  }).catch(() => {});
+                                }
+                                setPendingTx(null);
+                              }}
                             >
                               Cancel
                             </button>
@@ -650,7 +831,8 @@ function DashboardContent() {
                 <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
                   <div className="tech-label ink-dim">What intents work?</div>
                   <div className="mt-2 text-[12px] leading-6 ink-dim">
-                    Currently: <span className="font-mono">Swap X SOL to USDC</span> and <span className="font-mono">Exit X SOL to USDC</span>.
+                    Currently: <span className="font-mono">Swap X SOL to USDC</span>, <span className="font-mono">Exit X SOL to USDC</span>, and{' '}
+                    <span className="font-mono">Protect X SOL if SOL drops below Y</span> (automation).
                     More will be added behind strict policies.
                   </div>
                 </div>

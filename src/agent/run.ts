@@ -2,7 +2,7 @@
 import { IBRLAgent } from './core';
 
 async function main() {
-  const agent = new IBRLAgent();
+  const agent = new IBRLAgent({ enableAutonomy: true });
   console.log('IBRL Agent starting up...');
 
   // Simple loop to simulate autonomous behavior

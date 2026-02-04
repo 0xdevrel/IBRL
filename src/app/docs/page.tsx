@@ -51,6 +51,10 @@ export default function DocsPage() {
                     vendor keys server-side.
                   </div>
                   <div>
+                    <span className="font-mono">SQLite proposals store</span>: simulations + pending approvals and saved
+                    automations are persisted locally (not committed to git).
+                  </div>
+                  <div>
                     <span className="font-mono">Monitoring</span>: SOL/USD (Pyth Hermes), epoch info, wallet balance.
                   </div>
                 </div>
@@ -124,6 +128,12 @@ export default function DocsPage() {
                     <span className="font-mono">/api/intent</span> — parse/execute intents
                   </div>
                   <div>
+                    <span className="font-mono">/api/intents</span> — save/list automations (SQLite)
+                  </div>
+                  <div>
+                    <span className="font-mono">/api/approvals</span> — list pending proposals (SQLite)
+                  </div>
+                  <div>
                     <span className="font-mono">/api/price</span> — SOL price (cached)
                   </div>
                   <div>
@@ -139,6 +149,9 @@ export default function DocsPage() {
                   </div>
                   <div>
                     <span className="font-mono">GEMINI_API_KEY</span> — server-side intent extraction (never sent to browser)
+                  </div>
+                  <div>
+                    <span className="font-mono">SQLITE_PATH</span> — local DB file for proposals + automations (server-side)
                   </div>
                   <div>
                     <span className="font-mono">HACKATHON_API_KEY</span> — hackathon services

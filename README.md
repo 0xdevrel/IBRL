@@ -24,6 +24,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **SOL/USD monitoring:** server-side SOL price via Pyth Hermes (`GET /api/price`), cached.
 - **Intent parsing + policy gate:** local parser for common intents + optional Gemini structured extraction (server-side only).
 - **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
+- **SQLite-backed autonomy:** save a price-trigger automation; the background agent proposes transactions when the trigger fires (still requires wallet approval to broadcast).
 
 ## 🧱 Architecture (high-level)
 
@@ -59,11 +60,13 @@ cp .env.example .env
 SOLANA_RPC_URL=...
 # or SOLANA_RPC_URLS=..., ..., ...   (comma-separated failover list)
 GEMINI_API_KEY=...                  # optional (server-side only)
+SQLITE_PATH=.local/ibrl.sqlite      # local DB file (do not commit)
 ```
 
 Notes:
 - Do **not** put vendor RPC keys in `NEXT_PUBLIC_*`.
 - Lock RPC provider keys to allowed origins + rate limits in the provider dashboard.
+- The SQLite database is a local file; keep it out of git (this repo ignores `.local/` and `*.sqlite*`).
 
 ### Running the Application
 
@@ -77,7 +80,7 @@ Open [http://localhost:3000](http://localhost:3000)
 ```bash
 npm run start:agent
 ```
-This process currently performs monitoring (epoch/balance/price) and does not auto-broadcast trades.
+This process performs monitoring and evaluates saved automations. It generates **pending proposals** in SQLite when triggers fire, but it does not auto-broadcast: the user must still approve/sign in-wallet.
 
 ## 📡 API Endpoints
 
