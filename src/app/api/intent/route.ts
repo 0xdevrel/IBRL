@@ -4,6 +4,8 @@ import { extractIntentWithGemini } from '@/lib/gemini';
 import { enforcePolicy } from '@/agent/policy';
 import { JupiterManager } from '@/agent/jupiter';
 import { getDb } from '@/lib/db';
+import { getPortfolioSnapshot } from '@/lib/portfolioSnapshot';
+import { generatePortfolioAnswer } from '@/lib/portfolioAdvisor';
 import crypto from 'node:crypto';
 
 const connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
@@ -83,6 +85,38 @@ export async function POST(req: Request) {
         ],
         tx: null,
         agentReply: intent.message,
+        timestamp: Date.now(),
+        agentFingerprint: 'IBRL-α-01',
+      };
+      logInteraction({ owner, prompt, execute: Boolean(execute), ok: true, payload });
+      return NextResponse.json(payload);
+    }
+
+    if (intent.kind === 'PORTFOLIO_QA') {
+      if (!owner) {
+        const payload = { prompt, intent, blocked: true, reason: 'Wallet not connected' };
+        logInteraction({ owner, prompt, execute: Boolean(execute), ok: false, payload });
+        return NextResponse.json(payload, { status: 400 });
+      }
+
+      const snapshot = await getPortfolioSnapshot(connection, owner);
+      const reply = await generatePortfolioAnswer(intent.question, snapshot);
+      const payload = {
+        prompt,
+        intent,
+        plan: [
+          {
+            type: 'ANALYZE',
+            description: 'Portfolio analysis and strategy guidance (non-custodial, no auto-trades).',
+            params: { snapshot },
+            status: 'READY',
+            timestamp: Date.now(),
+          },
+        ],
+        tx: null,
+        quote: null,
+        portfolio: snapshot,
+        agentReply: reply,
         timestamp: Date.now(),
         agentFingerprint: 'IBRL-α-01',
       };

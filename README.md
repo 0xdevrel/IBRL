@@ -16,6 +16,7 @@ IBRL turns natural language into strict, policy-gated actions:
 - *"Protect 0.25 SOL if SOL drops below 95"* (automation)
 - *"Buy SOL with 25 USDC if SOL drops below 90"* (automation)
 - *"DCA 5 USDC to SOL every 1h"* (automation)
+- *"Given my balances, suggest a conservative/balanced/aggressive strategy"* (portfolio Q&A)
 - *"Swap 0.1 SOL to USD"* (normalized to USDC)
 
 All execution is **simulate-first** and **user-signed**. If the wallet prompt is rejected, the pending transaction is cancelled.
@@ -30,6 +31,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
 - **SQLite-backed autonomy:** save automations (price triggers + DCA); the background agent proposes transactions when triggers fire (still requires wallet approval to broadcast).
 - **UX accelerators:** built-in intent templates and an approvals inbox inside the dashboard.
+- **Portfolio Q&A:** ask questions like a fund manager would; IBRL replies using your real on-chain SOL/USDC balances and live SOL/USD (if available). No auto-trades.
 
 ## 🧱 Architecture (high-level)
 

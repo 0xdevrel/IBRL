@@ -27,6 +27,10 @@ async function getUsdcBalanceBaseUnits(connection: Connection, owner: PublicKey)
 
 export async function enforcePolicy(connection: Connection, owner: string | undefined, intent: Intent): Promise<PolicyResult> {
   if (intent.kind === 'CHAT') return { ok: true };
+  if (intent.kind === 'PORTFOLIO_QA') {
+    if (!owner) return { ok: false, reason: 'Wallet not connected' };
+    return { ok: true };
+  }
   if (intent.kind === 'UNSUPPORTED') return { ok: false, reason: intent.reason };
 
   if (!owner) return { ok: false, reason: 'Wallet not connected' };

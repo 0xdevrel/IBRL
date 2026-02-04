@@ -14,6 +14,10 @@ export const IntentSchema = z.discriminatedUnion('kind', [
     message: z.string().min(1),
   }),
   z.object({
+    kind: z.literal('PORTFOLIO_QA'),
+    question: z.string().min(1),
+  }),
+  z.object({
     kind: z.literal('PRICE_TRIGGER_EXIT'),
     amount: AmountSchema.extend({ unit: z.literal('SOL') }),
     thresholdUsd: z.number().positive(),

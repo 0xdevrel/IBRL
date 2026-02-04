@@ -176,6 +176,24 @@ export function parseIntentLocally(prompt: string): Intent {
     };
   }
 
+  // Portfolio questions / fund-manager style Q&A (non-execution).
+  const looksLikeQuestion =
+    lower.includes('?') ||
+    lower.startsWith('what ') ||
+    lower.startsWith('how ') ||
+    lower.startsWith('should ') ||
+    lower.startsWith('can you ') ||
+    lower.startsWith('help ') ||
+    lower.includes('balance') ||
+    lower.includes('portfolio') ||
+    lower.includes('invest') ||
+    lower.includes('strategy') ||
+    lower.includes('allocation') ||
+    lower.includes('risk');
+  if (looksLikeQuestion) {
+    return { kind: 'PORTFOLIO_QA', question: text };
+  }
+
   // Handle shorthand like: "swap 0.1 sol" -> treat as unsupported (missing destination).
   if (
     lower.startsWith('swap') ||

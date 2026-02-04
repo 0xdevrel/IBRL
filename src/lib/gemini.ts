@@ -21,6 +21,7 @@ You are IBRL-agent's intent extraction engine.
 
 Goal: Convert a human prompt into a single JSON object matching one of these intents:
 - CHAT: if the user greets or asks smalltalk (e.g., "hi", "hello"). Provide a short friendly reply in "message".
+- PORTFOLIO_QA: if the user asks questions about their balance, portfolio, investing, risk, or trading strategy. Return the question in "question". This intent must NEVER create or broadcast transactions.
 - PRICE_TRIGGER_EXIT: a protective automation. When SOL/USD is <= thresholdUsd, propose an exit of a specific SOL amount to USDC. This is a proposal only; execution always requires wallet approval.
 - PRICE_TRIGGER_ENTRY: a protective/entry automation. When SOL/USD is <= thresholdUsd, propose a buy of SOL using a specified USDC amount. This is a proposal only; execution always requires wallet approval.
 - DCA_SWAP: a schedule automation. Every intervalMinutes, propose a swap of amount from one asset to the other. This is a proposal only; execution always requires wallet approval.
@@ -155,6 +156,10 @@ function normalizeGeminiIntent(raw: any): any {
         typeof raw.thresholdUsd === 'string' ? Number(raw.thresholdUsd) : raw.thresholdUsd,
       slippageBps: raw.slippageBps ?? 50,
     };
+  }
+
+  if (raw.kind === 'PORTFOLIO_QA') {
+    return { kind: 'PORTFOLIO_QA', question: String(raw.question || '') };
   }
 
   if (raw.kind === 'PRICE_TRIGGER_ENTRY') {

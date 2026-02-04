@@ -43,6 +43,10 @@ export default function DocsPage() {
                     Gemini extraction).
                   </div>
                   <div>
+                    <span className="font-mono">Portfolio Q&amp;A</span>: ask for strategy guidance; the agent replies from
+                    your real on-chain balances (no auto-trades).
+                  </div>
+                  <div>
                     <span className="font-mono">Jupiter swaps</span> for <span className="font-mono">SOL → USDC</span>{' '}
                     (simulate-first, then wallet approval to broadcast).
                   </div>
@@ -185,6 +189,9 @@ export default function DocsPage() {
                   </div>
                   <div>
                     <span className="font-mono">DCA X USDC to SOL every Nh</span> (save automation)
+                  </div>
+                  <div>
+                    <span className="font-mono">Ask fund-manager questions</span> (portfolio Q&amp;A)
                   </div>
                   <div className="text-[rgba(58,58,56,0.65)]">
                     More intents are intentionally gated behind strict policies.

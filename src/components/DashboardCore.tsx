@@ -180,6 +180,7 @@ function DashboardContent() {
     { label: 'Protect (exit)', prompt: 'Protect 0.25 SOL if SOL drops below 95' },
     { label: 'Buy dip (entry)', prompt: 'Buy SOL with 25 USDC if SOL drops below 90' },
     { label: 'DCA hourly', prompt: 'DCA 5 USDC to SOL every 1h' },
+    { label: 'Fund Manager Q&A', prompt: 'Given my current balances, propose a conservative, balanced, and aggressive strategy. Explain the trade-offs.' },
   ];
 
   useEffect(() => {
@@ -582,6 +583,8 @@ function DashboardContent() {
                     <span className="font-mono">Enter</span>: Parse intent
                     <span className="mx-2 text-[rgba(58,58,56,0.4)]">•</span>
                     <span className="font-mono">Shift+Enter</span>: Build + simulate
+                    <span className="mx-2 text-[rgba(58,58,56,0.4)]">•</span>
+                    <span className="font-mono">Ask</span>: portfolio Q&amp;A (no auto-trades)
                   </div>
                 </div>
 
