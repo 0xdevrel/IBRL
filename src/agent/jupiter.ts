@@ -40,11 +40,8 @@ export class JupiterManager {
         },
       });
 
-      // Buffer for transaction
-      const swapTransactionBuf = Buffer.from(swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-      
-      return transaction;
+      const transaction = VersionedTransaction.deserialize(Buffer.from(swapTransaction, 'base64'));
+      return { transaction, swapTransactionBase64: swapTransaction };
     } catch (error) {
       console.error('[Jupiter] Error creating swap transaction:', error);
       return null;

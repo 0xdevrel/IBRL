@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build:agent": "tsc -p tsconfig.agent.json",
-    "start:agent": "npm run build:agent && node dist/agent/run.js",
+    "start:agent": "npm run build:agent && node dist/agent/agent/run.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -27,7 +27,8 @@
     "next": "16.1.6",
     "node-fetch": "^3.3.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

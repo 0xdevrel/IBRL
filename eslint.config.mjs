@@ -11,8 +11,17 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // This repo is a fast-moving hackathon prototype; allow pragmatic typing while features stabilize.
+      "@typescript-eslint/no-explicit-any": "off",
+      // Common client-only pattern; the dashboard is dynamically imported with SSR disabled.
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

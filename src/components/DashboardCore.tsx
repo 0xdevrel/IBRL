@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { WalletContextProvider } from '@/components/WalletContextProvider';
 import { WalletButton } from '@/components/WalletButton';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { LAMPORTS_PER_SOL, VersionedTransaction } from '@solana/web3.js';
 import Link from 'next/link';
 
 function StatusBadge({ status }: { status: string }) {
@@ -48,8 +48,11 @@ function NetworkTopologyGraph() {
 }
 
 function DashboardContent() {
-  const { publicKey, connected } = useWallet();
+  const { publicKey, connected, sendTransaction } = useWallet();
   const { connection } = useConnection();
+
+  const howToFaqSectionRef = useRef<HTMLElement | null>(null);
+  const [mosaicOffsetX, setMosaicOffsetX] = useState<number>(0);
 
   const [solPrice, setSolPrice] = useState<number | null>(null);
   const [epochInfo, setEpochInfo] = useState<any>(null);
@@ -61,34 +64,68 @@ function DashboardContent() {
   const [intentHistory, setIntentHistory] = useState<any[]>([]);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [executionResults, setExecutionResults] = useState<any>(null);
+  const [pendingTx, setPendingTx] = useState<null | {
+    swapTransactionBase64: string;
+    simulation: any;
+    quote: any;
+    prompt: string;
+  }>(null);
+  const [lastSignature, setLastSignature] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const handleIntentSubmit = async (execute: boolean = false) => {
     if (!intentInput.trim() || !connected) return;
 
     setIsExecuting(true);
-
+    
     try {
       const response = await fetch('/api/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: intentInput, execute }),
+        body: JSON.stringify({ prompt: intentInput, execute, owner: publicKey?.toBase58() }),
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        const reason = data?.reason || data?.error || 'Intent rejected';
+        setIntentHistory((prev) => [
+          {
+            id: Date.now(),
+            prompt: intentInput,
+            plan: [],
+            intent: data?.intent,
+            tx: null,
+            blocked: true,
+            reason,
+            timestamp: new Date().toISOString(),
+            executed: execute,
+          },
+          ...prev.slice(0, 9),
+        ]);
+        return;
+      }
 
       setIntentHistory((prev) => [
         {
           id: Date.now(),
           prompt: intentInput,
           plan: data.plan,
-          executionResults: data.executionResults,
+          intent: data.intent,
+          tx: data.tx,
+          quote: data.quote,
+          agentReply: data.agentReply,
+          blocked: data.blocked,
+          reason: data.reason,
           timestamp: new Date().toISOString(),
           executed: execute,
         },
         ...prev.slice(0, 9),
       ]);
 
-      setExecutionResults(data.executionResults);
+      setExecutionResults(data.tx?.simulation || null);
+      if (data.tx?.swapTransactionBase64) {
+        setPendingTx({ ...data.tx, prompt: intentInput });
+      }
       setIntentInput('');
     } catch (error) {
       console.error('Error submitting intent:', error);
@@ -169,8 +206,74 @@ function DashboardContent() {
     };
   }, [connection, publicKey, connected, startTime]);
 
+  useEffect(() => {
+    const tileWidth = 320;
+    const hairlineXs = [0, 96, 208, 240];
+
+    const computeOffset = () => {
+      const el = howToFaqSectionRef.current;
+      if (typeof window === 'undefined' || !el) return;
+
+      const isMdUp = window.matchMedia('(min-width: 768px)').matches;
+      if (!isMdUp) {
+        setMosaicOffsetX(0);
+        return;
+      }
+
+      const rect = el.getBoundingClientRect();
+      // Align the mosaic hairline grid to the vertical divider between the 5/12 and 7/12 columns.
+      const dividerX = rect.left + rect.width * (5 / 12);
+      const dividerMod = ((dividerX % tileWidth) + tileWidth) % tileWidth;
+
+      let best = hairlineXs[0];
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const x of hairlineXs) {
+        const raw = Math.abs(dividerMod - x);
+        const dist = Math.min(raw, tileWidth - raw);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = x;
+        }
+      }
+
+      const offset = ((dividerX - best) % tileWidth + tileWidth) % tileWidth;
+      setMosaicOffsetX(offset);
+    };
+
+    computeOffset();
+    window.addEventListener('resize', computeOffset);
+    return () => window.removeEventListener('resize', computeOffset);
+  }, []);
+
+  const approveAndSend = async () => {
+    if (!pendingTx?.swapTransactionBase64) return;
+    const ok = pendingTx.simulation?.value?.err == null;
+    if (!ok) return;
+    if (!publicKey) return;
+
+    try {
+      setSendError(null);
+      const tx = VersionedTransaction.deserialize(Buffer.from(pendingTx.swapTransactionBase64, 'base64'));
+      const signature = await sendTransaction(tx, connection, { skipPreflight: false });
+      setLastSignature(signature);
+      setPendingTx(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      // If the user rejects in-wallet, treat as a normal cancel (don’t keep an errored state).
+      if (message.toLowerCase().includes('user rejected')) {
+        setPendingTx(null);
+        setSendError('Cancelled in wallet.');
+        return;
+      }
+      setSendError(message);
+    }
+  };
+
   return (
-    <div className="min-h-screen mosaic-bg selection:bg-[var(--color-forest)] selection:text-[var(--color-paper)]">
+    <div
+      className="min-h-screen mosaic-bg selection:bg-[var(--color-forest)] selection:text-[var(--color-paper)]"
+      style={{ ['--mosaic-offset-x' as any]: `${mosaicOffsetX}px` } as React.CSSProperties}
+    >
       <header className="fixed inset-x-0 top-0 z-20 bg-[color:var(--color-paper)]/90 backdrop-blur-sm">
         <div className="hairline-b">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-10">
@@ -200,12 +303,6 @@ function DashboardContent() {
             </nav>
 
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="hidden h-11 min-w-[220px] items-center justify-center rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-6 tech-button ink-dim hover:text-[var(--color-forest)] md:inline-flex"
-              >
-                System
-              </button>
               <WalletButton />
             </div>
           </div>
@@ -290,7 +387,7 @@ function DashboardContent() {
                   <div className="mt-3 text-[12px] leading-6 ink-dim">
                     <span className="font-mono">Enter</span>: Parse intent
                     <span className="mx-2 text-[rgba(58,58,56,0.4)]">•</span>
-                    <span className="font-mono">Shift+Enter</span>: Execute (server-side signer)
+                    <span className="font-mono">Shift+Enter</span>: Build + simulate
                   </div>
                 </div>
               </div>
@@ -347,32 +444,35 @@ function DashboardContent() {
                           <span className="text-[var(--color-forest)]">@user_{publicKey?.toString().slice(0, 4)}:</span>{' '}
                           {item.prompt}
                         </div>
-                        <div className="mt-2 text-xs ink-dim">
-                          <span className="text-[var(--color-forest)]">[IBRL]:</span> Generated {item.plan?.length}{' '}
-                          step strategy
-                          {item.plan?.map((step: any, idx: number) => (
-                            <div key={idx} className="ml-4">
-                              {idx + 1}. {step.type}: {step.description}
-                            </div>
-                          ))}
-                        </div>
-                        {item.executionResults && (
-                          <div className="mt-2 text-xs">
-                            {item.executionResults.map((result: any, idx: number) => (
-                              <div
-                                key={idx}
-                                className={`ml-4 ${
-                                  result.success ? 'text-[var(--color-forest)]' : 'text-[var(--color-coral)]'
-                                }`}
-                              >
-                                {result.success ? 'OK' : 'ERR'} • {result.details?.transaction || 'Step completed'}
-                                {result.signature && (
-                                  <div className="tech-label mt-1 text-[rgba(58,58,56,0.6)]">
-                                    TX: {result.signature.slice(0, 8)}...{result.signature.slice(-8)}
-                                  </div>
-                                )}
+                        {item.blocked ? (
+                          <div className="mt-2 text-xs text-[var(--color-coral)] ml-4">
+                            <span className="tech-label ink-dim">[IBRL]:</span> {item.reason || 'Blocked'}
+                          </div>
+                        ) : item.agentReply ? (
+                          <div className="mt-2 text-xs ink-dim ml-4">
+                            <span className="tech-label ink-dim">[IBRL]:</span> {item.agentReply}
+                          </div>
+                        ) : item.plan?.length ? (
+                          <div className="mt-2 text-xs ink-dim">
+                            <span className="text-[var(--color-forest)]">[IBRL]:</span> Generated {item.plan?.length}{' '}
+                            step strategy
+                            {item.plan?.map((step: any, idx: number) => (
+                              <div key={idx} className="ml-4">
+                                {idx + 1}. {step.type}: {step.description}
                               </div>
                             ))}
+                          </div>
+                        ) : null}
+                        {item.quote && (
+                          <div className="mt-2 text-xs ink-dim ml-4">
+                            Quote: out={String(item.quote.outAmount)} • impact={String(item.quote.priceImpactPct)}
+                          </div>
+                        )}
+                        {item.tx?.simulation && (
+                          <div className="mt-2 text-xs ml-4">
+                            <span className={item.tx.simulation?.value?.err ? 'text-[var(--color-coral)]' : 'text-[var(--color-forest)]'}>
+                              {item.tx.simulation?.value?.err ? 'SIMULATION: ERR' : 'SIMULATION: OK'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -423,12 +523,135 @@ function DashboardContent() {
                       onClick={() => handleIntentSubmit(true)}
                       disabled={!connected || isExecuting || !intentInput.trim()}
                     >
-                      Execute
+                      Simulate
                     </button>
                   </div>
 
+                  {pendingTx && (
+                    <div className="mt-3 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="tech-label ink-dim">Simulation</div>
+                        <div className="tech-label ink-dim">{pendingTx.simulation?.value?.err ? 'ERR' : 'OK'}</div>
+                      </div>
+                      {pendingTx.simulation?.value?.err ? (
+                        <div className="mt-2 text-xs text-[var(--color-coral)]">
+                          Simulation failed. Adjust intent/amount and try again.
+                        </div>
+                      ) : (
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="text-xs ink-dim">
+                            Ready to execute. Approval required.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="h-9 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-forest)] px-4 tech-button text-[var(--color-paper)] hover:opacity-90 transition-opacity duration-150 ease-out"
+                              onClick={approveAndSend}
+                            >
+                              Approve &amp; Send
+                            </button>
+                            <button
+                              type="button"
+                              className="h-9 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-4 tech-button ink-dim hover:text-[var(--color-forest)]"
+                              onClick={() => setPendingTx(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {sendError && (
+                    <div className="mt-3 text-[10px] uppercase tracking-[0.12em] text-[var(--color-coral)] font-semibold">
+                      {sendError}
+                    </div>
+                  )}
+
+                  {lastSignature && (
+                    <div className="mt-3 text-[10px] uppercase tracking-[0.12em] ink-muted font-semibold">
+                      Last TX: {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
+                    </div>
+                  )}
+
                   <div className="mt-2 text-[10px] uppercase tracking-[0.12em] ink-muted font-semibold">
-                    Enter parses • Shift+Enter executes • Server RPC proxied
+                    Enter parses • Shift+Enter simulates • Wallet approves send • Server RPC proxied
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section ref={howToFaqSectionRef} className="mx-auto mt-10 max-w-6xl">
+          <div className="grid grid-cols-1 gap-px rounded-[2px] bg-[rgba(58,58,56,0.2)] md:grid-cols-12">
+            <div className="md:col-span-5 bg-[var(--color-paper)] p-8">
+              <h3 className="font-sans text-[28px] leading-[1.05] tracking-tight text-[var(--color-forest)]">
+                How To Use
+              </h3>
+              <div className="tech-meta ink-dim mt-2">Simulate-first execution with explicit approval</div>
+
+              <div className="mt-6 space-y-3">
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">01. Connect</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    Click <span className="font-mono">Select Wallet</span> and connect Phantom (or another supported wallet).
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">02. Parse</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    Type an intent and press <span className="font-mono">Enter</span>. Example:{' '}
+                    <span className="font-mono">Swap 0.1 SOL to USDC</span>.
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">03. Simulate</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    Click <span className="font-mono">Simulate</span> (or <span className="font-mono">Shift+Enter</span>) to build
+                    a real Jupiter swap transaction and run on-chain simulation.
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">04. Approve &amp; Send</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    If simulation is OK, click <span className="font-mono">Approve &amp; Send</span>. Your wallet will prompt you
+                    to sign. Rejecting will cancel the pending transaction.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="md:col-span-7 bg-[var(--color-paper)] p-8">
+              <h3 className="font-sans text-[28px] leading-[1.05] tracking-tight text-[var(--color-forest)]">
+                FAQ
+              </h3>
+              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">Is this automated?</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    The agent proposes actions and simulates them, but execution always requires your explicit wallet approval.
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">Do you store my keys?</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    No. You sign transactions in your wallet. RPC vendor keys stay server-side behind the <span className="font-mono">/api/rpc</span>{' '}
+                    proxy.
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">Why simulate first?</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    Simulation reduces surprises (fees, account issues) and lets you reject before anything is broadcast.
+                  </div>
+                </div>
+                <div className="rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-white p-4">
+                  <div className="tech-label ink-dim">What intents work?</div>
+                  <div className="mt-2 text-[12px] leading-6 ink-dim">
+                    Currently: <span className="font-mono">Swap X SOL to USDC</span> and <span className="font-mono">Exit X SOL to USDC</span>.
+                    More will be added behind strict policies.
                   </div>
                 </div>
               </div>

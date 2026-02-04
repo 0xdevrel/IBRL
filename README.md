@@ -1,65 +1,45 @@
 # IBRL Sovereign Vault
 
-**An autonomous, intent-driven sovereign agent vault on Solana**
+**Sovereign, intent-driven execution on Solana (simulate-first + explicit user approval)**
 
-IBRL allows users to provision capital to a dedicated agent proxy that manages risk and yield strategies using Jupiter and Kamino based on natural language commands.
+IBRL is a Next.js dashboard + server-side intent engine. You type a high-level intent in plain English, the agent proposes a concrete Solana transaction, simulates it, and then asks you to approve/sign in your wallet before anything is broadcast.
 
 Built for the Solana AI Agent Hackathon | Team: IBRL-agent's Team
 
 ## 🎯 Project Overview
 
-IBRL Sovereign Vault is a cutting-edge DeFi protocol that combines AI-powered intent parsing with automated trading strategies on Solana. Users can interact with the vault using natural language commands like:
+IBRL turns natural language into strict, policy-gated actions:
 
-- *"Chase 10% APY on SOL but exit if it drops 5%"*
-- *"Protect my position with stop-loss at $95"*
-- *"Optimize yield on 0.5 SOL"*
+- *"Swap 0.1 SOL to USDC"*
+- *"Exit 0.25 SOL to USDC"*
+- *"Swap 0.1 SOL to USD"* (normalized to USDC)
 
-The agent autonomously executes these intents using Jupiter for DEX aggregation and Kamino for yield strategies.
+All execution is **simulate-first** and **user-signed**. If the wallet prompt is rejected, the pending transaction is cancelled.
 
-## 🏗️ Architecture
+## ✅ Current Capabilities
 
-### Core Components
+- **Human-agent handshake (non-custodial):** wallet adapter connection + user signatures for all broadcasts.
+- **Secure RPC proxy:** browser JSON-RPC calls route through `POST /api/rpc` (same-origin) so vendor RPC keys never ship to the client.
+- **RPC failover:** configure multiple upstream RPCs via `SOLANA_RPC_URLS` (comma-separated) and the proxy retries on `403/429/5xx`.
+- **SOL/USD monitoring:** server-side SOL price via Pyth Hermes (`GET /api/price`), cached.
+- **Intent parsing + policy gate:** local parser for common intents + optional Gemini structured extraction (server-side only).
+- **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
 
-1. **IBRLAgent** (`src/agent/core.ts`)
-   - Main agent orchestrator
-   - Real-time SOL price tracking (Jupiter API + CoinGecko fallback)
-   - Network stats monitoring (epochs, balances)
-   - 30-second autonomous cycles
+## 🧱 Architecture (high-level)
 
-2. **IntentEngine** (`src/agent/strategy.ts`)
-   - Natural language parser for trading commands
-   - Strategy generation (ALLOCATE, PROTECT, HARVEST, EXIT)
-   - Risk management logic
-
-3. **JupiterManager** (`src/agent/jupiter.ts`)
-   - DEX aggregation via Jupiter API v6
-   - Optimal route discovery
-   - Transaction execution
-
-4. **AgentWallet** (`src/agent/wallet.ts`)
-   - Secure key management
-   - Transaction signing and broadcasting
-
-5. **Dashboard** (`src/components/DashboardCore.tsx`)
-   - Real-time UI with minimalist design
-   - Live metrics and terminal interface
-   - Wallet integration
-
-### Technical Stack
-
-- **Frontend**: Next.js 16.1.6, React 19.2.3, TypeScript
-- **Styling**: TailwindCSS with custom minimalist theme
-- **Blockchain**: Solana Web3.js, Anchor framework
-- **DeFi**: Jupiter API v6, Kamino integration
-- **Wallet**: Solana Wallet Adapter
+- **UI:** `src/components/DashboardCore.tsx`
+- **Wallet provider:** `src/components/WalletContextProvider.tsx` (points wallet adapter to same-origin `/api/rpc`)
+- **Intent API:** `src/app/api/intent/route.ts` (parse → policy → Jupiter quote → (optional) build+simulate)
+- **RPC proxy:** `src/app/api/rpc/route.ts` (server-side forward + failover)
+- **Price oracle:** `src/app/api/price/route.ts` (Pyth Hermes, cached)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- Solana wallet (for agent operations)
-- Environment variables configured
+- A Solana wallet (Phantom/Solflare/etc)
+- An upstream Solana RPC URL (kept in `.env`, server-side)
 
 ### Installation
 
@@ -74,28 +54,16 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. Required environment variables:
+3. Required environment variables (server-side):
 ```env
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-AGENT_PRIVATE_KEY=[1,2,3,4,5...] # JSON array format
-HACKATHON_API_KEY=your_hackathon_api_key
-NEXT_PUBLIC_SOLANA_RPC_URL=/api/rpc # Client RPC for wallet adapter (browser, proxied)
+SOLANA_RPC_URL=...
+# or SOLANA_RPC_URLS=..., ..., ...   (comma-separated failover list)
+GEMINI_API_KEY=...                  # optional (server-side only)
 ```
 
-### Recommended RPCs (tested)
-
-These RPCs responded successfully to `getEpochInfo` / `getLatestBlockhash` during local testing:
-- Helius: `https://mainnet.helius-rpc.com/?api-key=...`
-- Alchemy: `https://solana-mainnet.g.alchemy.com/v2/...`
-- QuickNode: `https://*.solana-mainnet.quiknode.pro/...`
-
-Set `NEXT_PUBLIC_SOLANA_RPC_URL` to one of the above so the dashboard + Phantom connect reliably. Treat provider keys as public (they ship to the browser) and lock them down using your provider’s domain allowlist and rate limits.
-
-### Secure RPC (recommended)
-
-The app includes a same-origin Solana JSON-RPC proxy at `POST /api/rpc` that forwards requests to `SOLANA_RPC_URL` server-side. Set `NEXT_PUBLIC_SOLANA_RPC_URL=/api/rpc` to:
-- avoid browser-origin restrictions (often the root cause of `403 Access forbidden`)
-- keep RPC provider keys out of the client bundle
+Notes:
+- Do **not** put vendor RPC keys in `NEXT_PUBLIC_*`.
+- Lock RPC provider keys to allowed origins + rate limits in the provider dashboard.
 
 ### Running the Application
 
@@ -105,10 +73,11 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000)
 
-2. **Start the autonomous agent**:
+2. **(Optional) Start the background agent heartbeat**:
 ```bash
 npm run start:agent
 ```
+This process currently performs monitoring (epoch/balance/price) and does not auto-broadcast trades.
 
 ## 📡 API Endpoints
 
@@ -116,75 +85,50 @@ npm run start:agent
 Returns real-time agent status and network statistics:
 ```json
 {
-  "startTime": 1738665600000,
-  "totalValueLocked": 0,
-  "activePositions": [],
   "riskLevel": "OPTIMAL",
   "currentEpoch": 1234,
   "solPrice": 98.42,
   "walletAddress": "...",
   "balance": 1.234,
-  "uptime": "02:30:45",
-  "lastUpdate": "2026-02-04T12:00:00.000Z"
+  "uptime": "2H 30M",
+  "lastUpdate": "2026-02-04T12:00:00.000Z",
+  "startTime": 1738665600000
 }
 ```
 
 ### POST /api/intent
-Parse natural language intent into execution plan:
+Parse an intent into a policy-gated plan. With `execute=true`, the server builds + simulates a real Jupiter swap transaction (no broadcast). The UI then asks the user to approve/sign before sending:
 ```bash
 curl -X POST http://localhost:3000/api/intent \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Chase 10% APY on SOL but exit if it drops 5%"}'
+  -d '{"prompt": "Swap 0.1 SOL to USDC"}'
 ```
 
-Response:
+Response (shape simplified):
 ```json
 {
-  "prompt": "Chase 10% APY on SOL but exit if it drops 5%",
-  "plan": [
-    {
-      "type": "ALLOCATE",
-      "description": "Optimizing for maximum stablecoin yield via Kamino/Drift",
-      "params": { "target": "USDC", "minApy": 0.08 },
-      "status": "READY",
-      "timestamp": 1738665600000
-    },
-    {
-      "type": "PROTECT",
-      "description": "Enabling dynamic stop-loss at 5% drawdown threshold",
-      "params": { "threshold": 0.05, "asset": "SOL" },
-      "status": "READY",
-      "timestamp": 1738665600000
-    }
-  ],
-  "timestamp": 1738665600000,
-  "agentFingerprint": "IBRL-α-01"
+  "intent": { "kind": "SWAP", "amountSol": 0.1, "toToken": "USDC" },
+  "plan": [ "Quote via Jupiter", "Build + simulate transaction (optional)" ],
+  "quote": { "...": "..." },
+  "tx": { "swapTransactionBase64": "...", "simulation": { "...": "..." } },
+  "agentReply": "Proposed swap. Simulate-first; approve in wallet to broadcast."
 }
 ```
 
-## 🎨 UI Features
-
-- **Real-time Metrics**: SOL price, epoch progress, wallet balance
-- **Terminal Interface**: Intent engine with command input
-- **Minimalist Design**: Technical aesthetic with forest (#1A3C2B) accents
-- **Responsive Layout**: Mobile-friendly dashboard
-- **Live Updates**: 5-second refresh cycles
-
 ## 🔒 Security Considerations
 
-- Agent private key stored securely in environment variables
-- All transactions simulated before execution
-- Risk level monitoring and automatic safeguards
-- Stop-loss mechanisms built into strategy execution
+- **Non-custodial execution:** user wallet signs and broadcasts transactions.
+- **No vendor keys in the browser:** RPC keys stay in `.env` and are used server-side by `/api/rpc`.
+- **Simulate-first:** agent simulates before asking for approval (still not a guarantee of final execution conditions).
+- **Strict allowlist:** only supported intents are permitted; everything else is rejected.
 
 ## 🛣️ Roadmap
 
-- [ ] Full Kamino integration for yield strategies
-- [ ] Advanced risk modeling
-- [ ] Multi-asset support
-- [ ] Governance token integration
-- [ ] Historical performance tracking
-- [ ] Mobile app
+- [ ] Expand intent allowlist (with policy constraints)
+- [ ] Slippage + size governance controls
+- [ ] Protocol adapters beyond Jupiter (behind audits/policies)
+- [ ] Structured risk monitoring + alerting
+- [ ] Historical intent + execution logs
 
 ## 📄 License
 

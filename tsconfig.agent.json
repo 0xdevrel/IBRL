@@ -3,13 +3,13 @@
   "compilerOptions": {
     "noEmit": false,
     "outDir": "./dist/agent",
-    "rootDir": "./src/agent",
+    "rootDir": "./src",
     "module": "CommonJS",
     "moduleResolution": "Node",
     "target": "ES2020",
     "sourceMap": true,
     "incremental": false
   },
-  "include": ["src/agent/**/*.ts"],
+  "include": ["src/agent/**/*.ts", "src/lib/**/*.ts"],
   "exclude": ["node_modules", ".next", "dist"]
 }

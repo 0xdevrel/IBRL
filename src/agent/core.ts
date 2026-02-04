@@ -1,9 +1,8 @@
 
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import * as dotenv from 'dotenv';
 import { AgentWallet } from './wallet';
-import { KaminoManager } from './kamino';
-import { RiskManager, RiskParameters } from './risk';
+import { getSolUsdPriceFromHermes } from '../lib/pyth';
 
 dotenv.config();
 
@@ -26,25 +25,12 @@ export class IBRLAgent {
   private startTime: number;
   private status: AgentStatus;
   private wallet: AgentWallet;
-  private kamino: KaminoManager;
-  private riskManager: RiskManager;
 
   constructor() {
     this.connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
     this.apiKey = process.env.HACKATHON_API_KEY || '';
     this.startTime = Date.now();
     this.wallet = new AgentWallet(this.connection);
-    this.kamino = new KaminoManager(this.connection);
-    
-    // Initialize risk manager with default parameters
-    const riskParameters: RiskParameters = {
-      maxDrawdown: 0.15, // 15% max drawdown
-      stopLossThreshold: 85, // Stop loss at $85 SOL
-      maxPositionSize: 10, // Max 10 SOL position
-      minHealthFactor: 1.2 // Minimum 1.2 health factor
-    };
-    
-    this.riskManager = new RiskManager(this.connection, this.kamino, riskParameters);
     
     this.status = {
       startTime: this.startTime,
@@ -68,51 +54,18 @@ export class IBRLAgent {
       const balance = await this.wallet.getBalance();
       this.status.balance = balance / LAMPORTS_PER_SOL;
 
-      // Primary: Jupiter Price API
       try {
-        const priceResponse = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
-        const priceData = await priceResponse.json();
-        const price = priceData.data?.['So11111111111111111111111111111111111111112']?.price;
-        if (price) {
-          this.status.solPrice = parseFloat(price);
-          console.log('[IBRL] SOL Price (Jupiter):', this.status.solPrice);
-        }
-      } catch (e) {
-        console.warn('[IBRL] Jupiter Price API failed, trying CoinGecko...');
-        const cgResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
-        const cgData = await cgResponse.json();
-        this.status.solPrice = cgData.solana.usd;
-        console.log('[IBRL] SOL Price (CoinGecko):', this.status.solPrice);
+        const { price } = await getSolUsdPriceFromHermes();
+        this.status.solPrice = price;
+        console.log('[IBRL] SOL/USD (Pyth Hermes):', this.status.solPrice);
+      } catch {
+        this.status.solPrice = null;
+        console.warn('[IBRL] SOL/USD oracle unavailable.');
       }
-
-      if (!this.status.solPrice) {
-         // Final Fallback: Hardcoded for demo if all APIs fail (only as absolute last resort)
-         this.status.solPrice = 98.42; 
-         console.warn('[IBRL] All price APIs failed, using last known fallback.');
-      }
-
-      // Update risk assessment and portfolio metrics
-      if (this.status.solPrice) {
-        const riskAssessment = await this.riskManager.assessRisk(
-          this.wallet.publicKey.toBase58(),
-          this.status.solPrice
-        );
-        
-        this.status.riskAlerts = riskAssessment.alerts;
-        this.status.portfolioMetrics = riskAssessment.metrics;
-        this.status.activePositions = riskAssessment.metrics.positions;
-        
-        // Update risk level based on alerts
-        if (riskAssessment.shouldStopTrading) {
-          this.status.riskLevel = 'CRITICAL';
-        } else if (riskAssessment.alerts.some(alert => alert.severity === 'HIGH')) {
-          this.status.riskLevel = 'HIGH';
-        } else if (riskAssessment.alerts.some(alert => alert.severity === 'MEDIUM')) {
-          this.status.riskLevel = 'MEDIUM';
-        } else {
-          this.status.riskLevel = 'OPTIMAL';
-        }
-      }
+      // Risk engine + DeFi position monitoring will be wired once real protocol adapters are integrated.
+      this.status.riskAlerts = [];
+      this.status.activePositions = [];
+      this.status.riskLevel = this.status.solPrice ? 'OPTIMAL' : 'DEGRADED';
       
     } catch (error) {
       console.error('[IBRL] Critical sync failure:', error);
