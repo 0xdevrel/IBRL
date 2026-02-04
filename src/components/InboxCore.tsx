@@ -58,6 +58,8 @@ function InboxContent() {
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const selectedSimOk = Boolean(selected?.simulation) && selected?.simulation?.value?.err == null;
+
   const filtered = useMemo(() => {
     if (statusFilter === 'ALL') return proposals;
     return proposals.filter((p) => p.status === statusFilter);
@@ -119,13 +121,26 @@ function InboxContent() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ owner, decision: 'DENIED' }),
     }).catch(() => {});
+    setProposals((prev) => prev.map((p) => (p.id === selectedId ? { ...p, status: 'DENIED' } : p)));
+    setSelected((prev) => (prev && prev.id === selectedId ? { ...prev, status: 'DENIED' } : prev));
+  };
+
+  const isUserRejected = (e: unknown) => {
+    const anyErr = e as any;
+    const message = String(anyErr?.message || anyErr || '').toLowerCase();
+    const name = String(anyErr?.name || '').toLowerCase();
+    const code = anyErr?.code;
+    if (message.includes('user rejected')) return true;
+    if (name.includes('walletsendtransactionerror') && message.includes('rejected')) return true;
+    // Common EIP-1193 rejection code (some adapters forward this).
+    if (code === 4001) return true;
+    return false;
   };
 
   const approveAndSend = async () => {
     if (!owner || !connected || !selected?.txBase64) return;
-    const ok = selected?.simulation?.value?.err == null;
-    if (!ok) {
-      setActionError('Simulation is not OK; refusing to send.');
+    if (!selectedSimOk) {
+      setActionError('Simulation is not OK (or missing); refusing to send.');
       return;
     }
     setActionError(null);
@@ -137,17 +152,21 @@ function InboxContent() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ owner, decision: 'SENT', signature }),
       }).catch(() => {});
+      setProposals((prev) => prev.map((p) => (p.id === selected.id ? { ...p, status: 'SENT', signature } : p)));
+      setSelected((prev) => (prev && prev.id === selected.id ? { ...prev, status: 'SENT', signature } : prev));
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (message.toLowerCase().includes('user rejected')) {
+      if (isUserRejected(e)) {
         await fetch(`/api/proposals/${encodeURIComponent(selected.id)}/decision`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ owner, decision: 'DENIED' }),
         }).catch(() => {});
+        setProposals((prev) => prev.map((p) => (p.id === selected.id ? { ...p, status: 'DENIED' } : p)));
+        setSelected((prev) => (prev && prev.id === selected.id ? { ...prev, status: 'DENIED' } : prev));
         setActionError('Cancelled in wallet.');
         return;
       }
+      const message = e instanceof Error ? e.message : String(e);
       setActionError(message);
     }
   };
@@ -292,7 +311,7 @@ function InboxContent() {
                             type="button"
                             className="h-11 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-forest)] px-6 tech-button text-[var(--color-paper)] hover:opacity-90 transition-opacity duration-150 ease-out disabled:opacity-50"
                             onClick={approveAndSend}
-                            disabled={!selected.txBase64}
+                            disabled={!selected.txBase64 || !selectedSimOk}
                           >
                             Approve &amp; Send
                           </button>
@@ -322,9 +341,14 @@ function InboxContent() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="tech-label ink-dim">Decision Report</div>
                       <div className="tech-meta ink-dim">
-                        Simulation: {selected.simulation?.value?.err ? 'ERR' : 'OK'}
+                        Simulation: {selected.simulation ? (selected.simulation?.value?.err ? 'ERR' : 'OK') : '—'}
                       </div>
                     </div>
+                    {!selectedSimOk && selected.status === 'PENDING_APPROVAL' && (
+                      <div className="mt-3 text-[10px] uppercase tracking-[0.12em] text-[var(--color-coral)] font-semibold">
+                        Not sendable: simulation missing or failed.
+                      </div>
+                    )}
                     <div className="mt-4 text-[12px] leading-6 ink-dim">
                       {selected.decisionReport?.markdown ? (
                         <MarkdownMessage text={String(selected.decisionReport.markdown)} />
@@ -350,4 +374,3 @@ export default function InboxCore() {
     </WalletContextProvider>
   );
 }
-
