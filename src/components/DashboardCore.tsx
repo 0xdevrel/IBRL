@@ -181,7 +181,23 @@ function DashboardContent() {
     { label: 'Protect (exit)', prompt: 'Protect 0.25 SOL if SOL drops below 95' },
     { label: 'Buy dip (entry)', prompt: 'Buy SOL with 25 USDC if SOL drops below 90' },
     { label: 'DCA hourly', prompt: 'DCA 5 USDC to SOL every 1h' },
-    { label: 'Fund Manager Q&A', prompt: 'Given my current balances, propose a conservative, balanced, and aggressive strategy. Explain the trade-offs.' },
+    { label: 'DCA to USDC', prompt: 'DCA 0.02 SOL to USDC every 4h' },
+    {
+      label: 'Strategy (3 modes)',
+      prompt: 'Given my on-chain balances, propose a conservative, balanced, and aggressive strategy. Explain trade-offs and map to supported IBRL intents.',
+    },
+    {
+      label: 'Strategy (rebalance)',
+      prompt: 'Given my balances, suggest a simple rebalance plan between SOL and USDC with risk controls. Map to supported IBRL intents.',
+    },
+    {
+      label: 'Strategy (risk check)',
+      prompt: 'Assess my current risk given my balances and SOL price (if available). What would you change and why? Map to supported IBRL intents.',
+    },
+    {
+      label: 'Strategy (income)',
+      prompt: 'Given my balances, suggest a low-risk approach focused on stability, and how to implement it using supported IBRL intents.',
+    },
   ];
 
   useEffect(() => {
