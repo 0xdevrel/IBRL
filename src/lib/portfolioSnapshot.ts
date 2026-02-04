@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { Connection, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { getSolUsdPriceFromHermes } from '@/lib/pyth';
@@ -48,4 +46,3 @@ export async function getPortfolioSnapshot(connection: Connection, owner: string
 
   return { owner, solBalance, usdcBalance, solUsdPrice, epoch };
 }
-

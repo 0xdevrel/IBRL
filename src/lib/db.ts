@@ -1,5 +1,3 @@
-import 'server-only';
-
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';

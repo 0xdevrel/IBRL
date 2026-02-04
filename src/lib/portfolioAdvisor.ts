@@ -1,5 +1,3 @@
-import 'server-only';
-
 import type { PortfolioSnapshot } from '@/lib/portfolioSnapshot';
 
 function getGeminiApiKey(): string {
@@ -114,4 +112,3 @@ function fallbackAnswer(question: string, snapshot: PortfolioSnapshot) {
     `- Parse → Simulate → Approve & Send (wallet signature required for any trade).`,
   ].join('\n');
 }
-

@@ -1,5 +1,3 @@
-import 'server-only';
-
 import type { Intent } from '@/agent/intentSchema';
 import type { PolicyResult } from '@/agent/policy';
 

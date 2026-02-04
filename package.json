@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build:agent": "tsc -p tsconfig.agent.json",
+    "build:agent": "tsc -p tsconfig.agent.json && tsc-alias -p tsconfig.agent.json",
     "start:agent": "npm run build:agent && node dist/agent/agent/run.js",
     "build": "next build",
     "start": "next start",
@@ -45,6 +45,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsc-alias": "^1.8.16",
     "typescript": "^5"
   }
 }
