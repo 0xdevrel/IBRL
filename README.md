@@ -32,6 +32,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **SQLite-backed autonomy:** save automations (price triggers + DCA) and run monitoring loops that create **approval-gated proposals** (no auto-broadcast).
 - **Approvals Inbox (`/inbox`):** full list + details view, approve/deny actions, and a decision report per proposal.
 - **Agent decision reports:** each proposal includes why/risks/scenarios + simulation and quote metadata.
+- **Activity console (`/activity`):** live view of monitoring samples, automations, proposals, and interaction logs (useful for judge demos).
 - **Portfolio Q&A:** ask questions like a fund manager would; IBRL replies using your real on-chain SOL/USDC balances and live SOL/USD (if available). No auto-trades.
 
 ## 🧱 Architecture (high-level)
@@ -89,6 +90,7 @@ Open [http://localhost:3000](http://localhost:3000)
 npm run start:agent
 ```
 This process performs monitoring and evaluates saved automations. It generates **pending proposals** in SQLite when triggers fire, but it does not auto-broadcast: the user must still approve/sign in-wallet.
+For demos, keep this running and open `/activity` to show live monitoring + proposal generation.
 
 ## 📡 API Endpoints
 
@@ -128,6 +130,9 @@ Response (shape simplified):
 
 ### GET /api/autonomy
 Runs monitoring loops for an owner and evaluates saved automations. Generates **pending proposals** in SQLite when a trigger fires (still requires wallet approval to broadcast).
+
+### GET /api/activity
+Aggregated “what happened recently” feed for an owner (proposals, automations, interaction logs, and SOL/USD samples).
 
 ### GET /api/proposals (and /api/proposals/:id)
 Lists proposals for an owner (pending/sent/denied) and returns proposal details, including the decision report and the base64 transaction (if applicable).

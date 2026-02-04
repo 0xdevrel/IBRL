@@ -520,14 +520,17 @@ function DashboardContent() {
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/inbox">
                 02. Inbox
               </Link>
+              <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/activity">
+                03. Activity
+              </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/docs">
-                03. Documentation
+                04. Documentation
               </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/security">
-                04. Security
+                05. Security
               </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/governance">
-                05. Governance
+                06. Governance
               </Link>
             </nav>
 

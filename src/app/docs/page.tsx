@@ -142,6 +142,9 @@ export default function DocsPage() {
                     <span className="font-mono">/api/autonomy</span> — monitoring loops + automation evaluation (approval-gated proposals)
                   </div>
                   <div>
+                    <span className="font-mono">/api/activity</span> — recent proposals + logs + monitoring samples (per wallet)
+                  </div>
+                  <div>
                     <span className="font-mono">/api/intents</span> — save/list automations (SQLite)
                   </div>
                   <div>
@@ -158,6 +161,9 @@ export default function DocsPage() {
                   </div>
                   <div>
                     <span className="font-mono">/inbox</span> — approvals inbox UI
+                  </div>
+                  <div>
+                    <span className="font-mono">/activity</span> — activity console UI (monitoring + logs)
                   </div>
                 </div>
               </div>
