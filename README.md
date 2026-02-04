@@ -29,8 +29,9 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **SOL/USD monitoring:** server-side SOL price via Pyth Hermes (`GET /api/price`), cached.
 - **Intent parsing + policy gate:** local parser for common intents + optional Gemini structured extraction (server-side only).
 - **Real transaction simulation:** builds a real Jupiter swap transaction and runs on-chain simulation before asking for approval.
-- **SQLite-backed autonomy:** save automations (price triggers + DCA); the background agent proposes transactions when triggers fire (still requires wallet approval to broadcast).
-- **UX accelerators:** built-in intent templates and an approvals inbox inside the dashboard.
+- **SQLite-backed autonomy:** save automations (price triggers + DCA) and run monitoring loops that create **approval-gated proposals** (no auto-broadcast).
+- **Approvals Inbox (`/inbox`):** full list + details view, approve/deny actions, and a decision report per proposal.
+- **Agent decision reports:** each proposal includes why/risks/scenarios + simulation and quote metadata.
 - **Portfolio Q&A:** ask questions like a fund manager would; IBRL replies using your real on-chain SOL/USDC balances and live SOL/USD (if available). No auto-trades.
 
 ## 🧱 Architecture (high-level)
@@ -124,6 +125,12 @@ Response (shape simplified):
   "agentReply": "Proposed swap. Simulate-first; approve in wallet to broadcast."
 }
 ```
+
+### GET /api/autonomy
+Runs monitoring loops for an owner and evaluates saved automations. Generates **pending proposals** in SQLite when a trigger fires (still requires wallet approval to broadcast).
+
+### GET /api/proposals (and /api/proposals/:id)
+Lists proposals for an owner (pending/sent/denied) and returns proposal details, including the decision report and the base64 transaction (if applicable).
 
 ## 🔒 Security Considerations
 

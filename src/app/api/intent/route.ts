@@ -6,6 +6,7 @@ import { JupiterManager } from '@/agent/jupiter';
 import { getDb } from '@/lib/db';
 import { getPortfolioSnapshot } from '@/lib/portfolioSnapshot';
 import { generatePortfolioAnswer } from '@/lib/portfolioAdvisor';
+import { buildDecisionReport } from '@/lib/decisionReport';
 import crypto from 'node:crypto';
 
 const connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
@@ -245,14 +246,34 @@ export async function POST(req: Request) {
 
       const db = getDb();
       const now = Date.now();
+      const decisionReport = buildDecisionReport({
+        owner,
+        prompt,
+        intent,
+        policy,
+        summary,
+        quote: quote
+          ? {
+              inAmount: quote.inAmount,
+              outAmount: quote.outAmount,
+              otherAmountThreshold: quote.otherAmountThreshold,
+              priceImpactPct: quote.priceImpactPct,
+            }
+          : null,
+        simulation,
+        from: swapFrom as any,
+        to: swapTo as any,
+      });
       db.prepare(
-        `INSERT INTO proposals (id, owner, intent_id, kind, summary, quote_json, tx_base64, simulation_json, status, created_at, updated_at)
-         VALUES (@id, @owner, NULL, @kind, @summary, @quote_json, @tx_base64, @simulation_json, 'PENDING_APPROVAL', @created_at, @updated_at)`
+        `INSERT INTO proposals (id, owner, intent_id, kind, summary, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+         VALUES (@id, @owner, NULL, @kind, @summary, @quote_json, @tx_base64, @simulation_json, @decision_report_json, @created_by, 'PENDING_APPROVAL', @created_at, @updated_at)`
       ).run({
         id: proposalId,
         owner,
         kind: intent.kind,
         summary,
+        decision_report_json: JSON.stringify(decisionReport),
+        created_by: 'user',
         quote_json: JSON.stringify({
           inAmount: quote!.inAmount,
           outAmount: quote!.outAmount,

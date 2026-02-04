@@ -373,12 +373,18 @@ function DashboardContent() {
     loadApprovals();
     loadHistory();
     loadAutomations();
+    // Lightweight agent loop: evaluate saved automations + monitoring proposals (server-side, approval-gated).
+    const autonomyTick = () =>
+      fetch(`/api/autonomy?owner=${encodeURIComponent(owner)}`).catch(() => {});
+    autonomyTick();
     const approvalsInterval = setInterval(loadApprovals, 10_000);
     const automationsInterval = setInterval(loadAutomations, 20_000);
+    const autonomyInterval = setInterval(autonomyTick, 20_000);
     return () => {
       cancelled = true;
       clearInterval(approvalsInterval);
       clearInterval(automationsInterval);
+      clearInterval(autonomyInterval);
     };
   }, [connected, publicKey, historyHydrated]);
 
@@ -458,7 +464,7 @@ function DashboardContent() {
         fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ decision: 'SENT', signature }),
+          body: JSON.stringify({ owner: publicKey.toBase58(), decision: 'SENT', signature }),
         }).catch(() => {});
       }
       setPendingTx(null);
@@ -470,7 +476,7 @@ function DashboardContent() {
           fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ decision: 'DENIED' }),
+            body: JSON.stringify({ owner: publicKey.toBase58(), decision: 'DENIED' }),
           }).catch(() => {});
         }
         setPendingTx(null);
@@ -503,14 +509,17 @@ function DashboardContent() {
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/">
                 01. Dashboard
               </Link>
+              <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/inbox">
+                02. Inbox
+              </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/docs">
-                02. Documentation
+                03. Documentation
               </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/security">
-                03. Security
+                04. Security
               </Link>
               <Link className="tech-label ink-dim hover:text-[var(--color-forest)]" href="/governance">
-                04. Governance
+                05. Governance
               </Link>
             </nav>
 
@@ -908,11 +917,12 @@ function DashboardContent() {
                               type="button"
                               className="h-9 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-4 tech-button ink-dim hover:text-[var(--color-forest)]"
                               onClick={() => {
+                                const owner = publicKey?.toBase58() || '';
                                 if (pendingTx?.proposalId) {
                                   fetch(`/api/proposals/${encodeURIComponent(pendingTx.proposalId)}/decision`, {
                                     method: 'POST',
                                     headers: { 'content-type': 'application/json' },
-                                    body: JSON.stringify({ decision: 'DENIED' }),
+                                    body: JSON.stringify({ owner, decision: 'DENIED' }),
                                   }).catch(() => {});
                                 }
                                 setPendingTx(null);

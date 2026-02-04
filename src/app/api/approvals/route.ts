@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, intent_id, kind, summary, quote_json, tx_base64, simulation_json, status, signature, created_at, updated_at
+      `SELECT id, intent_id, kind, summary, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, signature, created_at, updated_at
        FROM proposals
        WHERE owner = ? AND status = 'PENDING_APPROVAL'
        ORDER BY created_at DESC
@@ -29,6 +29,8 @@ export async function GET(req: Request) {
       quote: r.quote_json ? JSON.parse(r.quote_json) : null,
       txBase64: r.tx_base64,
       simulation: r.simulation_json ? JSON.parse(r.simulation_json) : null,
+      decisionReport: r.decision_report_json ? JSON.parse(r.decision_report_json) : null,
+      createdBy: r.created_by,
       status: r.status,
       signature: r.signature,
       createdAt: r.created_at,
@@ -36,4 +38,3 @@ export async function GET(req: Request) {
     })),
   });
 }
-

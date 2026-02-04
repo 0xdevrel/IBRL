@@ -66,7 +66,7 @@ export default function DocsPage() {
                   </div>
                   <div>
                     <span className="font-mono">Operator UX</span>: an approvals inbox and intent templates reduce friction
-                    while keeping wallet approval as the execution boundary.
+                    while keeping wallet approval as the execution boundary. Each proposal includes a decision report.
                   </div>
                 </div>
               </div>
@@ -139,16 +139,25 @@ export default function DocsPage() {
                     <span className="font-mono">/api/intent</span> — parse/execute intents
                   </div>
                   <div>
+                    <span className="font-mono">/api/autonomy</span> — monitoring loops + automation evaluation (approval-gated proposals)
+                  </div>
+                  <div>
                     <span className="font-mono">/api/intents</span> — save/list automations (SQLite)
                   </div>
                   <div>
                     <span className="font-mono">/api/approvals</span> — list pending proposals (SQLite)
                   </div>
                   <div>
+                    <span className="font-mono">/api/proposals</span> — full proposals inbox (filters + detail)
+                  </div>
+                  <div>
                     <span className="font-mono">/api/price</span> — SOL price (cached)
                   </div>
                   <div>
                     <span className="font-mono">/api/rpc</span> — secure JSON-RPC proxy
+                  </div>
+                  <div>
+                    <span className="font-mono">/inbox</span> — approvals inbox UI
                   </div>
                 </div>
               </div>

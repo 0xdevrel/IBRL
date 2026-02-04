@@ -30,6 +30,11 @@ export function getDb(): Db {
   return db;
 }
 
+function hasColumn(db: Db, table: string, column: string) {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  return rows.some((r) => r?.name === column);
+}
+
 function migrate(db: Db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS meta (
@@ -59,6 +64,8 @@ function migrate(db: Db) {
       quote_json TEXT,
       tx_base64 TEXT,
       simulation_json TEXT,
+      decision_report_json TEXT,
+      created_by TEXT NOT NULL DEFAULT 'agent',
       status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
       signature TEXT,
       created_at INTEGER NOT NULL,
@@ -67,6 +74,14 @@ function migrate(db: Db) {
     );
     CREATE INDEX IF NOT EXISTS proposals_owner_status_idx ON proposals(owner, status);
     CREATE INDEX IF NOT EXISTS proposals_intent_status_idx ON proposals(intent_id, status);
+
+    CREATE TABLE IF NOT EXISTS price_samples (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      price REAL NOT NULL,
+      ts INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS price_samples_ts_idx ON price_samples(ts);
 
     CREATE TABLE IF NOT EXISTS interactions (
       id TEXT PRIMARY KEY,
@@ -79,4 +94,12 @@ function migrate(db: Db) {
     );
     CREATE INDEX IF NOT EXISTS interactions_owner_created_idx ON interactions(owner, created_at);
   `);
+
+  // Lightweight migrations for existing DBs (SQLite doesn't support IF NOT EXISTS on ADD COLUMN).
+  if (!hasColumn(db, 'proposals', 'decision_report_json')) {
+    db.exec(`ALTER TABLE proposals ADD COLUMN decision_report_json TEXT;`);
+  }
+  if (!hasColumn(db, 'proposals', 'created_by')) {
+    db.exec(`ALTER TABLE proposals ADD COLUMN created_by TEXT NOT NULL DEFAULT 'agent';`);
+  }
 }
