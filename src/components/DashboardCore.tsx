@@ -53,6 +53,8 @@ function DashboardContent() {
 
   const howToFaqSectionRef = useRef<HTMLElement | null>(null);
   const [mosaicOffsetX, setMosaicOffsetX] = useState<number>(0);
+  const terminalScrollRef = useRef<HTMLDivElement | null>(null);
+  const terminalBottomRef = useRef<HTMLDivElement | null>(null);
 
   const [solPrice, setSolPrice] = useState<number | null>(null);
   const [epochInfo, setEpochInfo] = useState<any>(null);
@@ -68,6 +70,7 @@ function DashboardContent() {
   const [automationSaveStatus, setAutomationSaveStatus] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [savedAutomations, setSavedAutomations] = useState<any[]>([]);
+  const [historyHydrated, setHistoryHydrated] = useState<boolean>(false);
   const [pendingTx, setPendingTx] = useState<null | {
     proposalId?: string;
     swapTransactionBase64: string;
@@ -79,9 +82,13 @@ function DashboardContent() {
   const [sendError, setSendError] = useState<string | null>(null);
 
   const handleIntentSubmit = async (execute: boolean = false) => {
-    if (!intentInput.trim() || !connected) return;
+    if (!connected) return;
+    const promptForRequest = intentInput.trim() ? intentInput : lastParsed?.prompt || '';
+    if (!promptForRequest.trim()) return;
 
-    const promptSnapshot = intentInput;
+    const promptSnapshot = promptForRequest;
+    // Clear immediately on submit for a snappy terminal feel.
+    setIntentInput('');
     setIsExecuting(true);
     
     try {
@@ -94,39 +101,45 @@ function DashboardContent() {
       const data = await response.json();
       if (!response.ok) {
         const reason = data?.reason || data?.error || 'Intent rejected';
-        setIntentHistory((prev) => [
-          {
-            id: Date.now(),
-            prompt: promptSnapshot,
-            plan: [],
-            intent: data?.intent,
-            tx: null,
-            blocked: true,
-            reason,
-            timestamp: new Date().toISOString(),
-            executed: execute,
-          },
-          ...prev.slice(0, 9),
-        ]);
+        setIntentHistory((prev) => {
+          const next = [
+            ...prev.slice(Math.max(0, prev.length - 9)),
+            {
+              id: Date.now(),
+              prompt: promptSnapshot,
+              plan: [],
+              intent: data?.intent,
+              tx: null,
+              blocked: true,
+              reason,
+              timestamp: new Date().toISOString(),
+              executed: execute,
+            },
+          ];
+          return next;
+        });
         return;
       }
 
-      setIntentHistory((prev) => [
-        {
-          id: Date.now(),
-          prompt: promptSnapshot,
-          plan: data.plan,
-          intent: data.intent,
-          tx: data.tx,
-          quote: data.quote,
-          agentReply: data.agentReply,
-          blocked: data.blocked,
-          reason: data.reason,
-          timestamp: new Date().toISOString(),
-          executed: execute,
-        },
-        ...prev.slice(0, 9),
-      ]);
+      setIntentHistory((prev) => {
+        const next = [
+          ...prev.slice(Math.max(0, prev.length - 9)),
+          {
+            id: Date.now(),
+            prompt: promptSnapshot,
+            plan: data.plan,
+            intent: data.intent,
+            tx: data.tx,
+            quote: data.quote,
+            agentReply: data.agentReply,
+            blocked: data.blocked,
+            reason: data.reason,
+            timestamp: new Date().toISOString(),
+            executed: execute,
+          },
+        ];
+        return next;
+      });
 
       setLastParsed({ prompt: promptSnapshot, intent: data.intent });
       setAutomationSaveStatus(null);
@@ -134,13 +147,21 @@ function DashboardContent() {
       if (data.tx?.swapTransactionBase64) {
         setPendingTx({ ...data.tx, prompt: promptSnapshot });
       }
-      setIntentInput('');
     } catch (error) {
       console.error('Error submitting intent:', error);
     } finally {
       setIsExecuting(false);
     }
   };
+
+  useEffect(() => {
+    // Keep most recent activity visible.
+    const el = terminalScrollRef.current;
+    if (!el) return;
+    // Use scrollTop to avoid layout jumps.
+    el.scrollTop = el.scrollHeight;
+    terminalBottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [intentHistory, isExecuting]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -257,6 +278,7 @@ function DashboardContent() {
     if (!connected || !publicKey) {
       setPendingApprovals([]);
       setSavedAutomations([]);
+      setHistoryHydrated(false);
       return;
     }
 
@@ -269,6 +291,40 @@ function DashboardContent() {
         const data = await res.json();
         if (!cancelled && res.ok) {
           setPendingApprovals(Array.isArray(data?.proposals) ? data.proposals : []);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const loadHistory = async () => {
+      if (historyHydrated) return;
+      try {
+        const res = await fetch(`/api/history?owner=${encodeURIComponent(owner)}`);
+        const data = await res.json();
+        if (!cancelled && res.ok && Array.isArray(data?.interactions)) {
+          const mapped = data.interactions
+            .map((it: any) => {
+              const payload = it?.payload || {};
+              return {
+                id: it.id,
+                prompt: payload.prompt ?? it.prompt,
+                plan: payload.plan ?? [],
+                intent: payload.intent,
+                tx: payload.tx ?? null,
+                quote: payload.quote ?? null,
+                agentReply: payload.agentReply,
+                blocked: payload.blocked,
+                reason: payload.reason,
+                timestamp: payload.timestamp ? new Date(payload.timestamp).toISOString() : new Date(it.createdAt).toISOString(),
+                executed: Boolean(it.execute),
+              };
+            })
+            .filter(Boolean);
+
+          // Keep the terminal lean.
+          setIntentHistory(mapped.slice(-20));
+          setHistoryHydrated(true);
         }
       } catch {
         // ignore
@@ -288,6 +344,7 @@ function DashboardContent() {
     };
 
     loadApprovals();
+    loadHistory();
     loadAutomations();
     const approvalsInterval = setInterval(loadApprovals, 10_000);
     const automationsInterval = setInterval(loadAutomations, 20_000);
@@ -564,7 +621,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="max-h-[420px] overflow-y-auto p-4 font-mono text-sm leading-6">
+                <div ref={terminalScrollRef} className="max-h-[420px] overflow-y-auto p-4 font-mono text-sm leading-6">
                   <div className="text-[var(--color-forest)]">[SYSTEM] Initializing IBRL Sovereign Protocol...</div>
                   <div className="ink-dim">[DEBUG] Loaded Strategy: Intent-Driven Sovereign Vault</div>
                   <div className="ink-dim">[DEBUG] RPC: via /api/rpc (proxied)</div>
@@ -636,6 +693,7 @@ function DashboardContent() {
                       <span className="font-bold">[IBRL]:</span> Processing intent...
                     </div>
                   )}
+                  <div ref={terminalBottomRef} />
                 </div>
 
                 <div className="relative bg-[var(--color-paper)] p-4">
@@ -677,7 +735,7 @@ function DashboardContent() {
                       type="button"
                       className="h-10 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-4 font-mono text-[12px] font-semibold uppercase tracking-[0.12em] ink-dim transition-colors duration-150 ease-out hover:text-[var(--color-forest)] disabled:opacity-50"
                       onClick={() => handleIntentSubmit(true)}
-                      disabled={!connected || isExecuting || !intentInput.trim()}
+                      disabled={!connected || isExecuting || !(intentInput.trim() || lastParsed?.prompt)}
                     >
                       Simulate
                     </button>

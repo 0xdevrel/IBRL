@@ -50,7 +50,8 @@ export async function extractIntentWithGemini(prompt: string): Promise<Intent> {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 256,
+      responseMimeType: 'application/json',
     },
   };
 

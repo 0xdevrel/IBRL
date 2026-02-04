@@ -11,30 +11,53 @@ const connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mai
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+function logInteraction(args: { owner?: string; prompt: string; execute: boolean; ok: boolean; payload: unknown }) {
+  try {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO interactions (id, owner, prompt, execute, ok, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      crypto.randomUUID(),
+      args.owner || null,
+      args.prompt,
+      args.execute ? 1 : 0,
+      args.ok ? 1 : 0,
+      JSON.stringify(args.payload),
+      Date.now()
+    );
+  } catch {
+    // best-effort only
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { prompt, execute = false, owner, includeQuote = false } = await req.json();
-    if (!prompt) return NextResponse.json({ error: 'No prompt provided' }, { status: 400 });
+    if (!prompt) {
+      const payload = { error: 'No prompt provided' };
+      logInteraction({ owner, prompt: '', execute: Boolean(execute), ok: false, payload });
+      return NextResponse.json(payload, { status: 400 });
+    }
 
     const intent = await extractIntentWithGemini(prompt);
     const policy = await enforcePolicy(connection, owner, intent);
     if (!policy.ok) {
-      return NextResponse.json(
-        {
-          prompt,
-          intent,
-          plan: [],
-          blocked: true,
-          reason: policy.reason,
-          timestamp: Date.now(),
-          agentFingerprint: 'IBRL-α-01',
-        },
-        { status: 400 }
-      );
+      const payload = {
+        prompt,
+        intent,
+        plan: [],
+        blocked: true,
+        reason: policy.reason,
+        timestamp: Date.now(),
+        agentFingerprint: 'IBRL-α-01',
+      };
+      logInteraction({ owner, prompt, execute: Boolean(execute), ok: false, payload });
+      return NextResponse.json(payload, { status: 400 });
     }
 
     if (intent.kind === 'CHAT') {
-      return NextResponse.json({
+      const payload = {
         prompt,
         intent,
         plan: [
@@ -50,22 +73,23 @@ export async function POST(req: Request) {
         agentReply: intent.message,
         timestamp: Date.now(),
         agentFingerprint: 'IBRL-α-01',
-      });
+      };
+      logInteraction({ owner, prompt, execute: Boolean(execute), ok: true, payload });
+      return NextResponse.json(payload);
     }
 
     if (intent.kind === 'UNSUPPORTED') {
-      return NextResponse.json(
-        {
-          prompt,
-          intent,
-          plan: [],
-          blocked: true,
-          reason: intent.reason,
-          timestamp: Date.now(),
-          agentFingerprint: 'IBRL-α-01',
-        },
-        { status: 400 }
-      );
+      const payload = {
+        prompt,
+        intent,
+        plan: [],
+        blocked: true,
+        reason: intent.reason,
+        timestamp: Date.now(),
+        agentFingerprint: 'IBRL-α-01',
+      };
+      logInteraction({ owner, prompt, execute: Boolean(execute), ok: false, payload });
+      return NextResponse.json(payload, { status: 400 });
     }
 
     const steps =
@@ -110,7 +134,9 @@ export async function POST(req: Request) {
       ? await jupiter!.getQuote(inputMint, outputMint, amountLamports, intent.slippageBps)
       : null;
     if (shouldFetchQuote && !quote) {
-      return NextResponse.json({ error: 'Failed to fetch swap quote' }, { status: 502 });
+      const payload = { error: 'Failed to fetch swap quote' };
+      logInteraction({ owner, prompt, execute: Boolean(execute), ok: false, payload });
+      return NextResponse.json(payload, { status: 502 });
     }
 
     let tx = null as null | {
@@ -125,7 +151,9 @@ export async function POST(req: Request) {
 
       const swap = await jupiter!.swap(quote!, owner);
       if (!swap) {
-        return NextResponse.json({ error: 'Failed to build swap transaction' }, { status: 502 });
+        const payload = { error: 'Failed to build swap transaction' };
+        logInteraction({ owner, prompt, execute: true, ok: false, payload });
+        return NextResponse.json(payload, { status: 502 });
       }
 
       const simulation = await connection.simulateTransaction(swap.transaction, {
@@ -150,10 +178,10 @@ export async function POST(req: Request) {
         kind: intent.kind,
         summary,
         quote_json: JSON.stringify({
-          inAmount: quote.inAmount,
-          outAmount: quote.outAmount,
-          otherAmountThreshold: quote.otherAmountThreshold,
-          priceImpactPct: quote.priceImpactPct,
+          inAmount: quote!.inAmount,
+          outAmount: quote!.outAmount,
+          otherAmountThreshold: quote!.otherAmountThreshold,
+          priceImpactPct: quote!.priceImpactPct,
         }),
         tx_base64: swap.swapTransactionBase64,
         simulation_json: JSON.stringify(simulation),
@@ -166,15 +194,15 @@ export async function POST(req: Request) {
         swapTransactionBase64: swap.swapTransactionBase64,
         simulation,
         quote: {
-          inAmount: quote.inAmount,
-          outAmount: quote.outAmount,
-          otherAmountThreshold: quote.otherAmountThreshold,
-          priceImpactPct: quote.priceImpactPct,
+          inAmount: quote!.inAmount,
+          outAmount: quote!.outAmount,
+          otherAmountThreshold: quote!.otherAmountThreshold,
+          priceImpactPct: quote!.priceImpactPct,
         },
       };
     }
 
-    return NextResponse.json({ 
+    const payload = { 
       prompt,
       plan,
       intent,
@@ -194,9 +222,13 @@ export async function POST(req: Request) {
           : 'Parsed intent. Click Simulate to build and verify the transaction.',
       timestamp: Date.now(),
       agentFingerprint: 'IBRL-α-01'
-    });
+    };
+    logInteraction({ owner, prompt, execute: Boolean(execute), ok: true, payload });
+    return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to parse intent';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const payload = { error: message };
+    logInteraction({ prompt: 'unknown', execute: false, ok: false, payload });
+    return NextResponse.json(payload, { status: 500 });
   }
 }

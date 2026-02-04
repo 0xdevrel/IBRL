@@ -67,6 +67,16 @@ function migrate(db: Db) {
     );
     CREATE INDEX IF NOT EXISTS proposals_owner_status_idx ON proposals(owner, status);
     CREATE INDEX IF NOT EXISTS proposals_intent_status_idx ON proposals(intent_id, status);
+
+    CREATE TABLE IF NOT EXISTS interactions (
+      id TEXT PRIMARY KEY,
+      owner TEXT,
+      prompt TEXT NOT NULL,
+      execute INTEGER NOT NULL,
+      ok INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS interactions_owner_created_idx ON interactions(owner, created_at);
   `);
 }
-
