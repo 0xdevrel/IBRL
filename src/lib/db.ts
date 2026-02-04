@@ -28,6 +28,25 @@ export function getDb(): Db {
   return db;
 }
 
+export function getMeta(db: Db, key: string): string | null {
+  const row = db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as any | undefined;
+  return row?.value ?? null;
+}
+
+export function setMeta(db: Db, key: string, value: string) {
+  db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+    key,
+    value
+  );
+}
+
+export function getOrInitMeta(db: Db, key: string, initValue: string): string {
+  const existing = getMeta(db, key);
+  if (existing != null) return existing;
+  setMeta(db, key, initValue);
+  return initValue;
+}
+
 function hasColumn(db: Db, table: string, column: string) {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
   return rows.some((r) => r?.name === column);

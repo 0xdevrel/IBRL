@@ -62,7 +62,12 @@ function DashboardContent() {
   const [epochInfo, setEpochInfo] = useState<any>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [uptime, setUptime] = useState<string>('00:00:00');
-  const [startTime] = useState(Date.now());
+  const [startTime, setStartTime] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem('ibrl_system_start_time');
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  });
 
   const [intentInput, setIntentInput] = useState<string>('');
   const [intentHistory, setIntentHistory] = useState<any[]>([]);
@@ -225,6 +230,22 @@ function DashboardContent() {
       }
     };
 
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const st = Number(data?.startTime);
+        if (!cancelled && Number.isFinite(st) && st > 0) {
+          setStartTime(st);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('ibrl_system_start_time', String(st));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     const fetchBalance = async () => {
       if (!publicKey) return;
       try {
@@ -236,11 +257,12 @@ function DashboardContent() {
     };
 
     fetchPrice();
+    fetchStatus();
     fetchEpoch();
     fetchBalance();
 
     const uptimeInterval = setInterval(() => {
-      const diff = Date.now() - startTime;
+      const diff = Date.now() - (startTime ?? Date.now());
       const hours = Math.floor(diff / 3600000).toString().padStart(2, '0');
       const mins = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
       const secs = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
@@ -248,6 +270,7 @@ function DashboardContent() {
     }, 1000);
 
     const priceInterval = setInterval(fetchPrice, 15_000);
+    const statusInterval = setInterval(fetchStatus, 30_000);
     const epochInterval = setInterval(fetchEpoch, 30_000);
     const balanceInterval = setInterval(() => {
       if (connected) fetchBalance();
@@ -257,6 +280,7 @@ function DashboardContent() {
       cancelled = true;
       clearInterval(uptimeInterval);
       clearInterval(priceInterval);
+      clearInterval(statusInterval);
       clearInterval(epochInterval);
       clearInterval(balanceInterval);
     };
