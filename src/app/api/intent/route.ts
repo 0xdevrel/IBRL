@@ -15,6 +15,21 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDC_DECIMALS = 6;
 
+function extractRouteSummary(quote: any) {
+  const routePlan = Array.isArray(quote?.routePlan) ? quote.routePlan : Array.isArray(quote?.route_plan) ? quote.route_plan : null;
+  if (!routePlan) return null;
+  const venues: string[] = [];
+  for (const hop of routePlan) {
+    const label =
+      (typeof hop?.swapInfo?.label === 'string' && hop.swapInfo.label.trim()) ||
+      (typeof hop?.swapInfo?.marketMeta?.label === 'string' && hop.swapInfo.marketMeta.label.trim()) ||
+      '';
+    if (label && !venues.includes(label)) venues.push(label);
+    if (venues.length >= 6) break;
+  }
+  return { hopCount: routePlan.length, venues };
+}
+
 function amountToBaseUnits(amount: { value: number; unit: 'SOL' | 'USDC' }) {
   if (amount.unit === 'SOL') return Math.floor(amount.value * 1_000_000_000 + 1e-8);
   return Math.floor(amount.value * 10 ** USDC_DECIMALS + 1e-8);
@@ -258,6 +273,7 @@ export async function POST(req: Request) {
               outAmount: quote.outAmount,
               otherAmountThreshold: quote.otherAmountThreshold,
               priceImpactPct: quote.priceImpactPct,
+              route: extractRouteSummary(quote) || undefined,
             }
           : null,
         simulation,
@@ -280,6 +296,7 @@ export async function POST(req: Request) {
           outAmount: quote!.outAmount,
           otherAmountThreshold: quote!.otherAmountThreshold,
           priceImpactPct: quote!.priceImpactPct,
+          route: extractRouteSummary(quote!) || undefined,
         }),
         tx_base64: swap.swapTransactionBase64,
         simulation_json: JSON.stringify(simulation),

@@ -1,4 +1,5 @@
 import { Connection, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import crypto from 'node:crypto';
 import { getDb } from '@/lib/db';
 import { getSolUsdPriceFromHermes } from '@/lib/pyth';
@@ -10,6 +11,35 @@ import { buildDecisionReport } from '@/lib/decisionReport';
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDC_DECIMALS = 6;
+const USDC_MINT_KEY = new PublicKey(USDC_MINT);
+
+function extractRouteSummary(quote: any) {
+  const routePlan = Array.isArray(quote?.routePlan) ? quote.routePlan : Array.isArray(quote?.route_plan) ? quote.route_plan : null;
+  if (!routePlan) return null;
+  const venues: string[] = [];
+  for (const hop of routePlan) {
+    const label =
+      (typeof hop?.swapInfo?.label === 'string' && hop.swapInfo.label.trim()) ||
+      (typeof hop?.swapInfo?.marketMeta?.label === 'string' && hop.swapInfo.marketMeta.label.trim()) ||
+      '';
+    if (label && !venues.includes(label)) venues.push(label);
+    if (venues.length >= 6) break;
+  }
+  return { hopCount: routePlan.length, venues };
+}
+
+async function getUsdcBalance(connection: Connection, owner: string) {
+  const ownerKey = new PublicKey(owner);
+  const ata = getAssociatedTokenAddressSync(USDC_MINT_KEY, ownerKey, false);
+  try {
+    const bal = await connection.getTokenAccountBalance(ata);
+    const amount = Number(bal.value.amount);
+    const decimals = bal.value.decimals;
+    return amount / 10 ** decimals;
+  } catch {
+    return 0;
+  }
+}
 
 function amountToBaseUnits(amount: { value: number; unit: 'SOL' | 'USDC' }) {
   if (amount.unit === 'SOL') return Math.floor(amount.value * 1_000_000_000 + 1e-8);
@@ -93,6 +123,12 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
       now,
       jupiter,
     });
+    await maybeProposeUsdcBuffer({
+      connection,
+      owner,
+      now,
+      jupiter,
+    });
   }
 
   for (const row of intents) {
@@ -163,6 +199,7 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
         outAmount: quote.outAmount,
         otherAmountThreshold: quote.otherAmountThreshold,
         priceImpactPct: quote.priceImpactPct,
+        route: extractRouteSummary(quote) || undefined,
       },
       simulation,
       from: swapFromHuman,
@@ -185,6 +222,7 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
         outAmount: quote.outAmount,
         otherAmountThreshold: quote.otherAmountThreshold,
         priceImpactPct: quote.priceImpactPct,
+        route: extractRouteSummary(quote) || undefined,
       }),
       tx_base64: swap.swapTransactionBase64,
       simulation_json: JSON.stringify(simulation),
@@ -273,6 +311,7 @@ async function maybeProposeDrawdownHedge(args: {
       outAmount: quote.outAmount,
       otherAmountThreshold: quote.otherAmountThreshold,
       priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
     },
     simulation,
     from: 'SOL',
@@ -294,6 +333,118 @@ async function maybeProposeDrawdownHedge(args: {
       outAmount: quote.outAmount,
       otherAmountThreshold: quote.otherAmountThreshold,
       priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
+    }),
+    tx_base64: swap.swapTransactionBase64,
+    simulation_json: JSON.stringify(simulation),
+    created_at: args.now,
+    updated_at: args.now,
+  });
+}
+
+async function maybeProposeUsdcBuffer(args: {
+  connection: Connection;
+  owner: string;
+  now: number;
+  jupiter: JupiterManager;
+}) {
+  const db = getDb();
+
+  // Require recent usage to avoid proposing for long-abandoned wallets.
+  const recent = db
+    .prepare(`SELECT created_at FROM interactions WHERE owner = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(args.owner) as any | undefined;
+  if (!recent || args.now - Number(recent.created_at) > 7 * 24 * 60 * 60_000) return;
+
+  // Skip if already has a pending buffer proposal.
+  const pending = db
+    .prepare(
+      `SELECT id FROM proposals WHERE owner = ? AND status = 'PENDING_APPROVAL' AND summary LIKE 'Auto-buffer:%' LIMIT 1`
+    )
+    .get(args.owner) as any | undefined;
+  if (pending) return;
+
+  // Cooldown: once per 2 hours.
+  const last = db
+    .prepare(
+      `SELECT created_at FROM proposals
+       WHERE owner = ? AND created_by = 'agent' AND summary LIKE 'Auto-buffer:%'
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(args.owner) as any | undefined;
+  if (last && args.now - Number(last.created_at) < 2 * 60 * 60_000) return;
+
+  let solBalance = 0;
+  try {
+    const lamports = await args.connection.getBalance(new PublicKey(args.owner));
+    solBalance = lamports / LAMPORTS_PER_SOL;
+  } catch {
+    return;
+  }
+  const usdcBalance = await getUsdcBalance(args.connection, args.owner);
+
+  // Only propose if USDC buffer is low but SOL balance is meaningful.
+  if (solBalance < 0.15) return;
+  if (usdcBalance >= 2) return;
+
+  const amount = Math.max(0.02, Math.min(0.05, Math.floor(solBalance * 0.08 * 100) / 100));
+  const intent: Extract<Intent, { kind: 'EXIT_TO_USDC' }> = {
+    kind: 'EXIT_TO_USDC',
+    amount: { value: amount, unit: 'SOL' },
+    slippageBps: 50,
+  };
+
+  const policy = await enforcePolicy(args.connection, args.owner, intent);
+  if (!policy.ok) return;
+
+  const { inputMint, outputMint } = getMintsForSwap('SOL', 'USDC');
+  const amountBaseUnits = amountToBaseUnits(intent.amount);
+  const quote = await args.jupiter.getQuote(inputMint, outputMint, amountBaseUnits, intent.slippageBps);
+  if (!quote) return;
+  const swap = await args.jupiter.swap(quote, args.owner);
+  if (!swap) return;
+
+  const simulation = await args.connection.simulateTransaction(swap.transaction, {
+    sigVerify: false,
+    commitment: 'processed',
+  });
+
+  const proposalId = crypto.randomUUID();
+  const summary = `Auto-buffer: exit ${amount} SOL → USDC (USDC buffer low: ${usdcBalance.toFixed(2)} USDC)`;
+  const decisionReport = buildDecisionReport({
+    owner: args.owner,
+    prompt: `AUTO: Maintain a small USDC buffer for stability/fees when USDC is low.`,
+    intent,
+    policy,
+    summary,
+    quote: {
+      inAmount: quote.inAmount,
+      outAmount: quote.outAmount,
+      otherAmountThreshold: quote.otherAmountThreshold,
+      priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
+    },
+    simulation,
+    from: 'SOL',
+    to: 'USDC',
+  });
+
+  db.prepare(
+    `INSERT INTO proposals (id, owner, intent_id, kind, summary, intent_json, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+     VALUES (@id, @owner, NULL, @kind, @summary, @intent_json, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
+  ).run({
+    id: proposalId,
+    owner: args.owner,
+    kind: intent.kind,
+    summary,
+    intent_json: JSON.stringify(intent),
+    decision_report_json: JSON.stringify(decisionReport),
+    quote_json: JSON.stringify({
+      inAmount: quote.inAmount,
+      outAmount: quote.outAmount,
+      otherAmountThreshold: quote.otherAmountThreshold,
+      priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
     }),
     tx_base64: swap.swapTransactionBase64,
     simulation_json: JSON.stringify(simulation),

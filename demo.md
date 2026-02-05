@@ -116,6 +116,13 @@ Now demonstrate autonomy:
 What to show:
 - A new **auto-triggered** proposal exists (created by `agent`).
 - It has a decision report and is **PENDING_APPROVAL** until you approve/sign in-wallet.
+- Decision report now includes a **route breakdown** (hop count + venues) from Jupiter’s `routePlan`.
+
+Optional: demonstrate a second autonomous loop (“buffer rebalance”)
+
+- If your wallet has meaningful SOL but very low USDC, the agent may propose:
+  - `Auto-buffer: exit 0.02–0.05 SOL → USDC`
+- Show it appears as a proposal (still approval-gated) and explain the “why” in the report.
 
 ### 7) Activity Console: “Most Agentic” proof
 

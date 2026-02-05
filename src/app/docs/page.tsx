@@ -211,6 +211,9 @@ export default function DocsPage() {
                   <div>
                     <span className="font-mono">Ask fund-manager questions</span> (portfolio Q&amp;A)
                   </div>
+                  <div>
+                    <span className="font-mono">Autonomous loops</span>: drawdown hedge + USDC buffer proposals (approval-gated)
+                  </div>
                   <div className="text-[rgba(58,58,56,0.65)]">
                     More intents are intentionally gated behind strict policies.
                   </div>

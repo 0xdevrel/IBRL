@@ -6,6 +6,10 @@ type QuoteSummary = {
   outAmount: string;
   otherAmountThreshold?: string;
   priceImpactPct?: string;
+  route?: {
+    hopCount: number;
+    venues: string[];
+  };
 };
 
 export type DecisionReport = {
@@ -28,6 +32,10 @@ export type DecisionReport = {
     inHuman: string;
     outHuman: string;
     minOutHuman?: string;
+    route?: {
+      hopCount: number;
+      venues: string[];
+    };
   };
   risks: string[];
   scenarios: { ifPriceMovesPct: number; note: string }[];
@@ -96,6 +104,11 @@ export function buildDecisionReport(args: {
           `- Out (est.): \`${baseUnitsToHuman(args.quote.outAmount, args.to)}\``,
           args.quote.otherAmountThreshold ? `- Min out: \`${baseUnitsToHuman(args.quote.otherAmountThreshold, args.to)}\`` : null,
           args.quote.priceImpactPct ? `- Price impact: \`${args.quote.priceImpactPct}\`` : null,
+          args.quote.route?.hopCount
+            ? `- Route: \`${args.quote.route.hopCount} hop${args.quote.route.hopCount === 1 ? '' : 's'}\`${
+                args.quote.route.venues?.length ? ` via ${args.quote.route.venues.map((v) => `\`${v}\``).join(', ')}` : ''
+              }`
+            : null,
           `- Slippage: \`${slippageBps} bps\``,
         ]
           .filter(Boolean)
@@ -171,6 +184,7 @@ export function buildDecisionReport(args: {
           inHuman: baseUnitsToHuman(args.quote.inAmount, args.from),
           outHuman: baseUnitsToHuman(args.quote.outAmount, args.to),
           minOutHuman: args.quote.otherAmountThreshold ? baseUnitsToHuman(args.quote.otherAmountThreshold, args.to) : undefined,
+          route: args.quote.route,
         }
       : undefined,
     risks,
