@@ -52,6 +52,40 @@ function getMintsForSwap(from: 'SOL' | 'USDC', to: 'SOL' | 'USDC') {
   return { inputMint, outputMint };
 }
 
+function computeRealizedVol(rows: Array<{ price: number; ts: number }>) {
+  if (rows.length < 12) return null;
+  const sorted = [...rows].sort((a, b) => a.ts - b.ts);
+  const returns: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const p0 = Number(sorted[i - 1].price);
+    const p1 = Number(sorted[i].price);
+    if (!Number.isFinite(p0) || !Number.isFinite(p1) || p0 <= 0 || p1 <= 0) continue;
+    returns.push(Math.log(p1 / p0));
+  }
+  if (returns.length < 10) return null;
+
+  const mean = returns.reduce((s, x) => s + x, 0) / returns.length;
+  const variance = returns.reduce((s, x) => s + (x - mean) * (x - mean), 0) / Math.max(1, returns.length - 1);
+  const stdev = Math.sqrt(Math.max(0, variance));
+
+  const prices = sorted.map((r) => Number(r.price)).filter((p) => Number.isFinite(p) && p > 0);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const last = prices[prices.length - 1];
+  const rangePct = min > 0 ? (max - min) / min : 0;
+
+  return {
+    windowMs: sorted[sorted.length - 1].ts - sorted[0].ts,
+    sampleCount: sorted.length,
+    returnCount: returns.length,
+    stdevLogReturn: stdev, // dimensionless per-sample log-return stdev
+    rangePct,
+    lastPrice: last,
+    min,
+    max,
+  };
+}
+
 export async function evaluateAutonomy(connection: Connection, opts?: { owner?: string }) {
   const db = getDb();
   const intents = db
@@ -124,6 +158,12 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
       jupiter,
     });
     await maybeProposeUsdcBuffer({
+      connection,
+      owner,
+      now,
+      jupiter,
+    });
+    await maybeProposeVolatilityReduceRisk({
       connection,
       owner,
       now,
@@ -417,6 +457,134 @@ async function maybeProposeUsdcBuffer(args: {
     intent,
     policy,
     summary,
+    quote: {
+      inAmount: quote.inAmount,
+      outAmount: quote.outAmount,
+      otherAmountThreshold: quote.otherAmountThreshold,
+      priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
+    },
+    simulation,
+    from: 'SOL',
+    to: 'USDC',
+  });
+
+  db.prepare(
+    `INSERT INTO proposals (id, owner, intent_id, kind, summary, intent_json, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+     VALUES (@id, @owner, NULL, @kind, @summary, @intent_json, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
+  ).run({
+    id: proposalId,
+    owner: args.owner,
+    kind: intent.kind,
+    summary,
+    intent_json: JSON.stringify(intent),
+    decision_report_json: JSON.stringify(decisionReport),
+    quote_json: JSON.stringify({
+      inAmount: quote.inAmount,
+      outAmount: quote.outAmount,
+      otherAmountThreshold: quote.otherAmountThreshold,
+      priceImpactPct: quote.priceImpactPct,
+      route: extractRouteSummary(quote) || undefined,
+    }),
+    tx_base64: swap.swapTransactionBase64,
+    simulation_json: JSON.stringify(simulation),
+    created_at: args.now,
+    updated_at: args.now,
+  });
+}
+
+async function maybeProposeVolatilityReduceRisk(args: {
+  connection: Connection;
+  owner: string;
+  now: number;
+  jupiter: JupiterManager;
+}) {
+  const db = getDb();
+
+  // Require recent usage to avoid proposing for long-abandoned wallets.
+  const recent = db
+    .prepare(`SELECT created_at FROM interactions WHERE owner = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(args.owner) as any | undefined;
+  if (!recent || args.now - Number(recent.created_at) > 7 * 24 * 60 * 60_000) return;
+
+  // Skip if already has a pending vol proposal.
+  const pending = db
+    .prepare(
+      `SELECT id FROM proposals WHERE owner = ? AND status = 'PENDING_APPROVAL' AND summary LIKE 'Auto-volatility:%' LIMIT 1`
+    )
+    .get(args.owner) as any | undefined;
+  if (pending) return;
+
+  // Cooldown: strict (6 hours).
+  const last = db
+    .prepare(
+      `SELECT created_at FROM proposals
+       WHERE owner = ? AND created_by = 'agent' AND summary LIKE 'Auto-volatility:%'
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(args.owner) as any | undefined;
+  if (last && args.now - Number(last.created_at) < 6 * 60 * 60_000) return;
+
+  // Compute realized volatility from recent price samples (global oracle).
+  const lookbackMs = 30 * 60_000;
+  const rows = db
+    .prepare(`SELECT price, ts FROM price_samples WHERE ts >= ? ORDER BY ts ASC LIMIT 500`)
+    .all(args.now - lookbackMs) as any[];
+  const vol = computeRealizedVol(
+    rows.map((r) => ({ price: Number(r.price), ts: Number(r.ts) })).filter((r) => Number.isFinite(r.price) && Number.isFinite(r.ts))
+  );
+  if (!vol) return;
+
+  // Trigger thresholds: require both high range and high return stdev to reduce false positives.
+  const rangeOk = vol.rangePct >= 0.035; // 3.5% range in ~30m
+  const stdevOk = vol.stdevLogReturn >= 0.006; // ~0.6% per-sample log-return stdev
+  if (!rangeOk || !stdevOk) return;
+
+  let solBalance = 0;
+  try {
+    const lamports = await args.connection.getBalance(new PublicKey(args.owner));
+    solBalance = lamports / LAMPORTS_PER_SOL;
+  } catch {
+    return;
+  }
+  const usdcBalance = await getUsdcBalance(args.connection, args.owner);
+
+  // If user already has a decent USDC buffer, don't bother.
+  if (usdcBalance >= 25) return;
+  if (solBalance < 0.25) return;
+
+  const amount = Math.max(0.05, Math.min(0.15, Math.floor(solBalance * 0.12 * 100) / 100));
+  const intent: Extract<Intent, { kind: 'EXIT_TO_USDC' }> = {
+    kind: 'EXIT_TO_USDC',
+    amount: { value: amount, unit: 'SOL' },
+    slippageBps: 50,
+  };
+
+  const policy = await enforcePolicy(args.connection, args.owner, intent);
+  if (!policy.ok) return;
+
+  const { inputMint, outputMint } = getMintsForSwap('SOL', 'USDC');
+  const amountBaseUnits = amountToBaseUnits(intent.amount);
+  const quote = await args.jupiter.getQuote(inputMint, outputMint, amountBaseUnits, intent.slippageBps);
+  if (!quote) return;
+  const swap = await args.jupiter.swap(quote, args.owner);
+  if (!swap) return;
+
+  const simulation = await args.connection.simulateTransaction(swap.transaction, {
+    sigVerify: false,
+    commitment: 'processed',
+  });
+
+  const metricLine = `σ≈${(vol.stdevLogReturn * 100).toFixed(2)}% (range ${(vol.rangePct * 100).toFixed(2)}% / 30m, n=${vol.returnCount})`;
+  const proposalId = crypto.randomUUID();
+  const summary = `Auto-volatility: reduce risk by exiting ${amount} SOL → USDC (${metricLine})`;
+  const decisionReport = buildDecisionReport({
+    owner: args.owner,
+    prompt: `AUTO: Volatility spike detected. Proposing a small risk reduction exit.`,
+    intent,
+    policy,
+    summary,
+    triggerMetricLine: metricLine,
     quote: {
       inAmount: quote.inAmount,
       outAmount: quote.outAmount,

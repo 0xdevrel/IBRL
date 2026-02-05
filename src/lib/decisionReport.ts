@@ -17,6 +17,9 @@ export type DecisionReport = {
   generatedAt: number;
   owner: string;
   prompt: string;
+  trigger?: {
+    metricLine?: string;
+  };
   proposal: {
     kind: string;
     summary: string;
@@ -63,6 +66,7 @@ export function buildDecisionReport(args: {
   simulation: any | null;
   from: 'SOL' | 'USDC';
   to: 'SOL' | 'USDC';
+  triggerMetricLine?: string;
 }): DecisionReport {
   const generatedAt = Date.now();
   const simErr = args.simulation?.value?.err ?? null;
@@ -143,6 +147,7 @@ export function buildDecisionReport(args: {
     ``,
     `**Why now**`,
     `- ${whyNow}`,
+    args.triggerMetricLine ? `- Trigger metric: ${args.triggerMetricLine}` : null,
     ``,
     policyBlock,
     ``,
@@ -167,6 +172,7 @@ export function buildDecisionReport(args: {
     generatedAt,
     owner: args.owner,
     prompt: args.prompt,
+    trigger: args.triggerMetricLine ? { metricLine: args.triggerMetricLine } : undefined,
     proposal: {
       kind: args.intent.kind,
       summary: args.summary,

@@ -124,6 +124,14 @@ Optional: demonstrate a second autonomous loop (“buffer rebalance”)
   - `Auto-buffer: exit 0.02–0.05 SOL → USDC`
 - Show it appears as a proposal (still approval-gated) and explain the “why” in the report.
 
+Optional: demonstrate a third autonomous loop (“volatility spike”)
+
+- Leave `npm run start:agent` running for a few minutes so it collects `price_samples`.
+- If SOL price is choppy, the agent may propose:
+  - `Auto-volatility: reduce risk by exiting X SOL → USDC (σ≈..., range ... / 30m)`
+- In the decision report, call out:
+  - “Trigger metric: σ≈… (range … / 30m, n=…)”
+
 ### 7) Activity Console: “Most Agentic” proof
 
 Open `/activity`:

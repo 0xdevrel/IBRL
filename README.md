@@ -33,6 +33,7 @@ All execution is **simulate-first** and **user-signed**. If the wallet prompt is
 - **Approvals Inbox (`/inbox`):** full list + details view, approve/deny actions, and a decision report per proposal.
 - **Agent decision reports:** each proposal includes why/risks/scenarios + simulation and quote metadata.
 - **Route breakdown:** decision reports include Jupiter route hop count + venues (from `routePlan`) for transparency.
+- **Volatility loop:** a strict, cooldown-gated realized-volatility monitor can propose “reduce risk” exits (approval-gated).
 - **Activity console (`/activity`):** live view of monitoring samples, automations, proposals, and interaction logs (useful for judge demos).
 - **Portfolio Q&A:** ask questions like a fund manager would; IBRL replies using your real on-chain SOL/USDC balances and live SOL/USD (if available). No auto-trades.
 
