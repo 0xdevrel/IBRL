@@ -154,6 +154,9 @@ export default function DocsPage() {
                     <span className="font-mono">/api/proposals</span> — full proposals inbox (filters + detail)
                   </div>
                   <div>
+                    <span className="font-mono">/api/proposals/:id/refresh</span> — rebuild + re-simulate a pending proposal
+                  </div>
+                  <div>
                     <span className="font-mono">/api/price</span> — SOL price (cached)
                   </div>
                   <div>

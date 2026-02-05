@@ -137,6 +137,9 @@ Aggregated “what happened recently” feed for an owner (proposals, automation
 ### GET /api/proposals (and /api/proposals/:id)
 Lists proposals for an owner (pending/sent/denied) and returns proposal details, including the decision report and the base64 transaction (if applicable).
 
+### POST /api/proposals/:id/refresh
+Rebuilds + re-simulates a pending proposal using a fresh Jupiter quote (useful if the original transaction becomes stale).
+
 ## 🔒 Security Considerations
 
 - **Non-custodial execution:** user wallet signs and broadcasts transactions.

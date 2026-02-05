@@ -77,6 +77,9 @@ What to show:
   - simulation result
   - what changes if price moves
 
+If you see “stale proposal”:
+- Click **Rebuild** to fetch a fresh quote + rebuild + simulate a new transaction (still no broadcast).
+
 If your inbox is empty:
 - Click **Generate Sample Proposal**
   - This builds and simulates a real Jupiter swap and creates a real pending proposal (still no broadcast until approved).
@@ -140,4 +143,3 @@ Say out loud:
 - If you see “Insufficient USDC balance…”, it’s expected when trying an intent that needs USDC. The agent should report the real balance shortfall.
 - Price triggers depend on current SOL/USD; for demos, use a high threshold (like `10000`) to trigger immediately.
 - This repo does **not** implement a “open http://… in terminal and launch the system browser” command. If you want that as a demo feature, we can add it as a strictly non-custodial convenience action (no keys/secrets involved) in a follow-up.
-

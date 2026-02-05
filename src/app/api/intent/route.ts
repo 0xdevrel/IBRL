@@ -265,13 +265,14 @@ export async function POST(req: Request) {
         to: swapTo as any,
       });
       db.prepare(
-        `INSERT INTO proposals (id, owner, intent_id, kind, summary, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
-         VALUES (@id, @owner, NULL, @kind, @summary, @quote_json, @tx_base64, @simulation_json, @decision_report_json, @created_by, 'PENDING_APPROVAL', @created_at, @updated_at)`
+        `INSERT INTO proposals (id, owner, intent_id, kind, summary, intent_json, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+         VALUES (@id, @owner, NULL, @kind, @summary, @intent_json, @quote_json, @tx_base64, @simulation_json, @decision_report_json, @created_by, 'PENDING_APPROVAL', @created_at, @updated_at)`
       ).run({
         id: proposalId,
         owner,
         kind: intent.kind,
         summary,
+        intent_json: JSON.stringify(intent),
         decision_report_json: JSON.stringify(decisionReport),
         created_by: 'user',
         quote_json: JSON.stringify({

@@ -59,7 +59,32 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
   // Autonomous loop (non-trigger): drawdown hedge proposal if price drops sharply.
   const owners = opts?.owner
     ? [opts.owner]
-    : Array.from(new Set(intents.map((r) => String(r.owner || '').trim()).filter(Boolean)));
+    : (() => {
+        const set = new Set<string>();
+        for (const r of intents) {
+          const o = String(r.owner || '').trim();
+          if (o) set.add(o);
+        }
+        try {
+          const ps = db.prepare(`SELECT DISTINCT owner FROM proposals LIMIT 500`).all() as any[];
+          for (const r of ps) {
+            const o = String(r?.owner || '').trim();
+            if (o) set.add(o);
+          }
+        } catch {
+          // ignore
+        }
+        try {
+          const is = db.prepare(`SELECT DISTINCT owner FROM interactions WHERE owner IS NOT NULL LIMIT 500`).all() as any[];
+          for (const r of is) {
+            const o = String(r?.owner || '').trim();
+            if (o) set.add(o);
+          }
+        } catch {
+          // ignore
+        }
+        return Array.from(set);
+      })();
   for (const owner of owners) {
     await maybeProposeDrawdownHedge({
       connection,
@@ -145,14 +170,15 @@ export async function evaluateAutonomy(connection: Connection, opts?: { owner?: 
     });
 
     db.prepare(
-      `INSERT INTO proposals (id, owner, intent_id, kind, summary, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
-       VALUES (@id, @owner, @intent_id, @kind, @summary, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
+      `INSERT INTO proposals (id, owner, intent_id, kind, summary, intent_json, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+       VALUES (@id, @owner, @intent_id, @kind, @summary, @intent_json, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
     ).run({
       id: proposalId,
       owner: row.owner,
       intent_id: row.id,
       kind: cfg.kind,
       summary,
+      intent_json: JSON.stringify(cfg),
       decision_report_json: JSON.stringify(decisionReport),
       quote_json: JSON.stringify({
         inAmount: quote.inAmount,
@@ -254,13 +280,14 @@ async function maybeProposeDrawdownHedge(args: {
   });
 
   db.prepare(
-    `INSERT INTO proposals (id, owner, intent_id, kind, summary, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
-     VALUES (@id, @owner, NULL, @kind, @summary, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
+    `INSERT INTO proposals (id, owner, intent_id, kind, summary, intent_json, quote_json, tx_base64, simulation_json, decision_report_json, created_by, status, created_at, updated_at)
+     VALUES (@id, @owner, NULL, @kind, @summary, @intent_json, @quote_json, @tx_base64, @simulation_json, @decision_report_json, 'agent', 'PENDING_APPROVAL', @created_at, @updated_at)`
   ).run({
     id: proposalId,
     owner: args.owner,
     kind: intent.kind,
     summary,
+    intent_json: JSON.stringify(intent),
     decision_report_json: JSON.stringify(decisionReport),
     quote_json: JSON.stringify({
       inAmount: quote.inAmount,

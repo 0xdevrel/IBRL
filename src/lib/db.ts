@@ -78,6 +78,7 @@ function migrate(db: Db) {
       intent_id TEXT,
       kind TEXT NOT NULL,
       summary TEXT NOT NULL,
+      intent_json TEXT,
       quote_json TEXT,
       tx_base64 TEXT,
       simulation_json TEXT,
@@ -118,5 +119,8 @@ function migrate(db: Db) {
   }
   if (!hasColumn(db, 'proposals', 'created_by')) {
     db.exec(`ALTER TABLE proposals ADD COLUMN created_by TEXT NOT NULL DEFAULT 'agent';`);
+  }
+  if (!hasColumn(db, 'proposals', 'intent_json')) {
+    db.exec(`ALTER TABLE proposals ADD COLUMN intent_json TEXT;`);
   }
 }

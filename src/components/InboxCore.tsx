@@ -58,8 +58,13 @@ function InboxContent() {
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
+  const [rebuildLoading, setRebuildLoading] = useState(false);
 
   const selectedSimOk = Boolean(selected?.simulation) && selected?.simulation?.value?.err == null;
+  const selectedStale =
+    selected?.status === 'PENDING_APPROVAL' && typeof selected?.updatedAt === 'number'
+      ? Date.now() - selected.updatedAt > 2 * 60_000
+      : false;
 
   const filtered = useMemo(() => {
     if (statusFilter === 'ALL') return proposals;
@@ -172,6 +177,10 @@ function InboxContent() {
       setActionError('Simulation is not OK (or missing); refusing to send.');
       return;
     }
+    if (selectedStale) {
+      setActionError('Proposal is stale. Rebuild & simulate before sending.');
+      return;
+    }
     setActionError(null);
     try {
       const tx = VersionedTransaction.deserialize(Buffer.from(selected.txBase64, 'base64'));
@@ -197,6 +206,51 @@ function InboxContent() {
       }
       const message = e instanceof Error ? e.message : String(e);
       setActionError(message);
+    }
+  };
+
+  const rebuild = async () => {
+    if (!owner || !connected || !selectedId) return;
+    setActionError(null);
+    setRebuildLoading(true);
+    try {
+      const res = await fetch(`/api/proposals/${encodeURIComponent(selectedId)}/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ owner }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(String(data?.error || 'Failed to rebuild proposal.'));
+        return;
+      }
+      const refreshedAt = Date.now();
+      setSelected((prev) =>
+        prev && prev.id === selectedId
+          ? {
+              ...prev,
+              txBase64: data?.tx?.swapTransactionBase64 ?? prev.txBase64,
+              simulation: data?.tx?.simulation ?? prev.simulation,
+              quote: data?.tx?.quote ?? prev.quote,
+              decisionReport: data?.decisionReport ?? prev.decisionReport,
+              updatedAt: refreshedAt,
+            }
+          : prev
+      );
+      setProposals((prev) =>
+        prev.map((p) =>
+          p.id === selectedId
+            ? {
+                ...p,
+                updatedAt: refreshedAt,
+              }
+            : p
+        )
+      );
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRebuildLoading(false);
     }
   };
 
@@ -362,9 +416,17 @@ function InboxContent() {
                             type="button"
                             className="h-11 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-[var(--color-forest)] px-6 tech-button text-[var(--color-paper)] hover:opacity-90 transition-opacity duration-150 ease-out disabled:opacity-50"
                             onClick={approveAndSend}
-                            disabled={!selected.txBase64 || !selectedSimOk}
+                            disabled={!selected.txBase64 || !selectedSimOk || selectedStale}
                           >
                             Approve &amp; Send
+                          </button>
+                          <button
+                            type="button"
+                            className="h-11 rounded-[2px] border border-[rgba(58,58,56,0.2)] bg-transparent px-6 tech-button ink-dim hover:text-[var(--color-forest)] disabled:opacity-50"
+                            onClick={rebuild}
+                            disabled={rebuildLoading}
+                          >
+                            {rebuildLoading ? 'Rebuilding…' : 'Rebuild'}
                           </button>
                           <button
                             type="button"
@@ -398,6 +460,11 @@ function InboxContent() {
                     {!selectedSimOk && selected.status === 'PENDING_APPROVAL' && (
                       <div className="mt-3 text-[10px] uppercase tracking-[0.12em] text-[var(--color-coral)] font-semibold">
                         Not sendable: simulation missing or failed.
+                      </div>
+                    )}
+                    {selectedStale && selected.status === 'PENDING_APPROVAL' && (
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-[var(--color-coral)] font-semibold">
+                        Stale proposal (older than ~2 minutes). Rebuild before sending.
                       </div>
                     )}
                     <div className="mt-4 text-[12px] leading-6 ink-dim">
